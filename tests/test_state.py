@@ -6,7 +6,49 @@ from pathlib import Path
 
 import pytest
 
-from anaf_sync.state import Archive, CatalogEntry
+from anaf_sync.state import Archive, CatalogEntry, RunRecord
+
+# The pre-``created_at`` schema, verbatim, so the migration test starts from a
+# real v1 database rather than a doctored v2 one.
+_V1_SCHEMA = """
+CREATE TABLE messages (
+    message_id   TEXT PRIMARY KEY,
+    cif          TEXT NOT NULL,
+    direction    TEXT NOT NULL,
+    saved_at     TEXT NOT NULL,
+    base_path    TEXT NOT NULL UNIQUE,
+    artifacts    TEXT NOT NULL,
+    issue_date   TEXT,
+    number       TEXT,
+    partner_name TEXT,
+    partner_cif  TEXT,
+    total        REAL,
+    currency     TEXT,
+    message_type TEXT
+);
+CREATE TABLE failures (
+    message_id      TEXT PRIMARY KEY,
+    first_failed_at TEXT NOT NULL,
+    last_failed_at  TEXT NOT NULL,
+    attempts        INTEGER NOT NULL,
+    error           TEXT NOT NULL
+);
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO meta (key, value) VALUES ('schema_version', '1');
+"""
+
+
+def _make_v1_db(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    conn.executescript(_V1_SCHEMA)
+    conn.execute(
+        "INSERT INTO messages (message_id, cif, direction, saved_at, base_path, "
+        "artifacts, issue_date, number, partner_name) "
+        "VALUES ('old', '111', 'received', '2026-01-01T00:00:00', 'a/b', "
+        "'[\"zip\"]', '2026-01-01', 'INV-1', 'OLD PARTNER SRL')"
+    )
+    conn.commit()
+    conn.close()
 
 
 def _entry(message_id: str, base_path: str, **over: object) -> CatalogEntry:
@@ -38,7 +80,7 @@ def test_schema_version_mismatch_raises(tmp_path: Path) -> None:
     with Archive.open(path):
         pass
     conn = sqlite3.connect(path)
-    conn.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
+    conn.execute("UPDATE meta SET value = '99' WHERE key = 'schema_version'")
     conn.commit()
     conn.close()
 
@@ -183,3 +225,182 @@ def test_mutations_commit_before_returning(tmp_path: Path) -> None:
 
         archive.record_failure("m2", "boom")
         assert "m2" in Archive.open(path).failures
+
+
+# -- M0.1 schema v2 migration + created_at -----------------------------------
+
+
+def test_v1_db_migrates_in_place_and_keeps_old_rows(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    _make_v1_db(path)
+
+    with Archive.open(path) as archive:
+        assert archive.is_archived("old")  # old row still readable
+        entry = archive.catalog()[0]
+        assert entry.message_id == "old"
+        assert entry.created_at is None  # migrated rows keep NULL
+
+    conn = sqlite3.connect(path)
+    version = conn.execute(
+        "SELECT value FROM meta WHERE key = 'schema_version'"
+    ).fetchone()[0]
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
+    conn.close()
+    assert version == "2"
+    assert "created_at" in cols
+
+
+def test_created_at_roundtrips(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    created = dt.datetime(2026, 7, 18, 14, 30)
+    with Archive.open(path) as archive:
+        archive.record(_entry("m1", "p", created_at=created))
+
+    with Archive.open(path) as archive:
+        assert archive.catalog()[0].created_at == created
+
+
+# -- M0.2 read-only open ------------------------------------------------------
+
+
+def test_open_readonly_missing_file_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="anaf-sync sync"):
+        Archive.open_readonly(tmp_path / "absent.db")
+
+
+def test_readonly_reads_while_writer_writes(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    with Archive.open(path) as writer:
+        writer.record(_entry("m1", "p1"))
+        reader = Archive.open_readonly(path)
+        try:
+            assert reader.is_archived("m1")
+            # A commit made after the reader opened is visible; no lock error.
+            writer.record(_entry("m2", "p2"))
+            assert reader.is_archived("m2")
+            assert reader.count == 2
+        finally:
+            reader.close()
+
+
+# -- M0.3 last-run record -----------------------------------------------------
+
+
+def test_last_run_is_none_before_any_run(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        assert archive.last_run() is None
+
+
+def test_run_record_roundtrips(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    run = RunRecord(
+        finished_at=dt.datetime(2026, 7, 20, 6, 0, tzinfo=dt.UTC),
+        outcome="failed",
+        listed=12,
+        archived=9,
+        failures=1,
+        error="auth expired",
+        error_kind="AnafAuthError",
+    )
+    with Archive.open(path) as archive:
+        archive.record_run(run)
+
+    loaded = Archive.open_readonly(path).last_run()
+    assert loaded == run
+
+
+def test_record_run_overwrites_previous(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        archive.record_run(
+            RunRecord(finished_at=dt.datetime(2026, 7, 1, tzinfo=dt.UTC), outcome="ok")
+        )
+        archive.record_run(
+            RunRecord(
+                finished_at=dt.datetime(2026, 7, 2, tzinfo=dt.UTC), outcome="crashed"
+            )
+        )
+        last = archive.last_run()
+        assert last is not None
+        assert last.outcome == "crashed"
+
+
+# -- M0.4 catalog query API ---------------------------------------------------
+
+
+def _seed_catalog(archive: Archive) -> None:
+    archive.record(
+        _entry(
+            "a",
+            "pa",
+            direction="received",
+            issue_date=dt.date(2026, 7, 18),
+            number="FCT-2107",
+            partner_name="ELECTROMONTAJ CARPAȚI S.R.L.",
+        )
+    )
+    archive.record(
+        _entry(
+            "b",
+            "pb",
+            direction="sent",
+            issue_date=dt.date(2026, 7, 15),
+            number="AS-1042",
+            partner_name="MOBILA PRODEX S.R.L.",
+        )
+    )
+    archive.record(
+        _entry(
+            "c",
+            "pc",
+            direction="received",
+            issue_date=dt.date(2026, 7, 3),
+            number="FCT-1001",
+            partner_name="ACME CONSTRUCT S.R.L.",
+        )
+    )
+    archive.record(
+        _entry("d", "pd", direction="received", number="NO-DATE", partner_name="X SRL")
+    )
+
+
+def test_catalog_orders_newest_first_nulls_last(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_catalog(archive)
+        ids = [e.message_id for e in archive.catalog()]
+        assert ids == ["a", "b", "c", "d"]  # d has no issue_date → last
+
+
+def test_catalog_filters_by_direction(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_catalog(archive)
+        received = archive.catalog(direction="received")
+        assert {e.message_id for e in received} == {"a", "c", "d"}
+        assert archive.catalog_count(direction="sent") == 1
+
+
+def test_catalog_search_matches_number_or_partner(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_catalog(archive)
+        # Case-insensitive; matches partner name...
+        assert {e.message_id for e in archive.catalog(search="acme")} == {"c"}
+        # ...and invoice number.
+        assert {e.message_id for e in archive.catalog(search="AS-10")} == {"b"}
+        # "d" is "X SRL" (no dots), so only a/b/c match "S.R.L.".
+        assert archive.catalog_count(search="S.R.L.") == 3
+
+
+def test_catalog_filters_by_issue_date_range(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_catalog(archive)
+        window = archive.catalog(
+            issued_from=dt.date(2026, 7, 10), issued_to=dt.date(2026, 7, 16)
+        )
+        assert [e.message_id for e in window] == ["b"]  # only the 15th
+
+
+def test_catalog_paging_with_limit_and_offset(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_catalog(archive)
+        assert [e.message_id for e in archive.catalog(limit=2)] == ["a", "b"]
+        assert [e.message_id for e in archive.catalog(limit=2, offset=2)] == ["c", "d"]
+        assert archive.catalog_count() == 4

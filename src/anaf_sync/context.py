@@ -207,7 +207,9 @@ def catalog_fields(
 
     Best-effort/``None`` throughout, projected from the same sources as
     :func:`build_context`. ``total`` is narrowed from ``Decimal`` to ``float``
-    for the catalog's ``REAL`` column.
+    for the catalog's ``REAL`` column. ``created`` is ANAF's ``data_creare``
+    (when the message entered SPV), keyed as the engine maps it onto
+    ``CatalogEntry.created_at``.
     """
     inv = _project(item, view)
     return {
@@ -218,4 +220,5 @@ def catalog_fields(
         "total": float(inv.total) if inv.total is not None else None,
         "currency": inv.currency,
         "message_type": item.message_type,
+        "created": _parse_created(item.created_at),
     }

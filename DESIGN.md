@@ -65,13 +65,16 @@ also the **permanent catalog** the future UI (§9) browses — partner, date,
 number, direction, total — which a window-bounded, pruned JSON file could
 never be. `messages` is keyed by ANAF message id, with `base_path` a `UNIQUE`
 column (the path registry, below) and best-effort catalog columns projected
-from the UBL view. `failures` and a `meta` (`schema_version`) table round it
-out. On open, a fresh DB gets the schema written; an existing one with a
-mismatched `schema_version` raises `ValueError` (the version check is the only
-forward-compatibility hook — no migration framework, and no user data to
-migrate). A corrupt DB raises `sqlite3.DatabaseError`, which crashes the run
-by design; deleting the file is safe recovery, costing at most a 60-day
-re-download.
+from the UBL view. `failures` and a `meta` (`schema_version`, and the desktop
+companion's `last_run` blob — §10) table round it out. On open, a fresh DB gets
+the current schema; an existing one is migrated forward by small, additive
+steps (v1 → v2 added the nullable `created_at` column via `ALTER TABLE`, so old
+rows simply keep NULL — the archive is a permanent catalog, never rebuilt), and
+an unrecognised `schema_version` raises `ValueError`. Migrations stay additive
+by design: there is no migration *framework* and no destructive rewrite, only
+column adds a permanent catalog can absorb in place. A corrupt DB raises
+`sqlite3.DatabaseError`, which crashes the run by design; deleting the file is
+safe recovery, costing at most a 60-day re-download.
 
 Mechanics (`engine.py` + `state.py`):
 
@@ -255,10 +258,47 @@ Mirrors anafpy's hybrid model:
   guessing them. Full-text search (SQLite **FTS5**) and a `reindex` command to
   backfill/rebuild catalog columns from the on-disk artifacts are the natural
   next steps there.
-- **Purge awareness, not purge alerts.** A message that fails for 60 days
-  straight ages out of ANAF's window and is lost. Failures are visible in
-  every run's report and exit code; an explicit "about to age out" warning
-  would be a cheap, worthwhile addition.
+- **Purge awareness.** A message that fails for 60 days straight ages out of
+  ANAF's window and is lost. Beyond the per-run report and exit code,
+  `anaf-sync status` now prints an "expires from SPV in *N* days" countdown per
+  failing message (`health.days_until_purge`), so an operator sees a persistent
+  failure closing in before it is too late. The desktop companion (§10) surfaces
+  the same signal as its amber/red states.
 - **No archive verification command.** `anaf-sync verify` (re-hash artifacts
   against state, validate MF signatures via `validate_signature`) is a
   natural extension.
+
+## 10. The desktop companion
+
+A small system-tray application (`anaf_sync.tray`, an optional `tray` extra —
+PySide6, GUI-free core stays intact) makes silent sync failures visible before
+ANAF's 60-day purge, which a scheduled CLI job cannot do on its own. Its shape
+follows directly from the invariants above:
+
+- **Read-only observer.** The tray never downloads, uploads, deletes, or
+  rewrites archive files. It reads the catalog through `Archive.open_readonly`
+  (a `mode=ro` connection; WAL from §3 is what lets it query while a scheduled
+  sync writes) and edits only `config.toml`, via a tomlkit round-trip that
+  preserves the user's comments and formatting. Every actual sync is performed
+  by spawning the same `anaf-sync sync` CLI — one code path for the schedule and
+  the button alike, one `filelock` (§3) serialising both.
+- **Three states, derived not stored** (`health.derive_health`, pure and
+  tested). Any failure trace → **warn** (amber); a crashed last run, an
+  auth/config-family failure, or a schedule that has gone silent past twice its
+  interval → **err** (red); otherwise **ok** (green). `err` wins over `warn`.
+  The inputs are the failure traces (§3) and the new **last-run record**
+  (`RunRecord`, a JSON blob under `meta.last_run`) the CLI writes on every exit
+  path — success, caught boundary error (with the exception's kind, so an
+  expired token reads as red rather than amber), and the system-mode crash
+  excepthook. Bookkeeping never masks the run: a failed `record_run` is logged
+  and swallowed.
+- **Schema v2 for the delay signal.** Flagging an invoice *declarată cu
+  întârziere* needs both of its dates — the issue date (already stored) and when
+  it entered SPV (ANAF's `data_creare`). The latter was parsed but dropped; v2
+  persists it as `created_at` so `health.upload_delay_days` can compare them
+  against a single `DELAY_THRESHOLD_DAYS` constant. The migration is the
+  additive `ALTER TABLE` described in §3.
+
+The companion is deliberately not a second way to *do* anything — it observes,
+it configures, and it delegates every mutation to the CLI. That keeps the
+archive's correctness properties (§3) entirely in one place.

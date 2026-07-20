@@ -276,6 +276,8 @@ async def test_catalog_fields_land_in_the_db(tmp_path: Path) -> None:
     # listing's `detalii` prose (cif_emitent=222), the seller for a received one.
     assert row["partner_cif"] == "222"
     assert row["base_path"] == str(tmp_path / "archive" / "111" / "received" / "m1")
+    # created_at threads from the listing's data_creare (202607181430).
+    assert row["created_at"] == "2026-07-18T14:30:00"
 
 
 async def test_messages_without_id_are_counted_not_failed(tmp_path: Path) -> None:

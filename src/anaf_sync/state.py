@@ -31,13 +31,13 @@ import datetime as dt
 import json
 import sqlite3
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel
 
-__all__ = ["Archive", "CatalogEntry", "FailureRecord"]
+__all__ = ["Archive", "CatalogEntry", "FailureRecord", "RunRecord"]
 
-_SCHEMA_VERSION = "1"
+_SCHEMA_VERSION = "2"
 
 _SCHEMA = """
 CREATE TABLE messages (
@@ -53,7 +53,8 @@ CREATE TABLE messages (
     partner_cif  TEXT,
     total        REAL,
     currency     TEXT,
-    message_type TEXT
+    message_type TEXT,
+    created_at   TEXT
 );
 CREATE INDEX idx_messages_issue_date ON messages(issue_date);
 CREATE INDEX idx_messages_partner    ON messages(partner_name);
@@ -67,7 +68,7 @@ CREATE TABLE failures (
 );
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-INSERT INTO meta (key, value) VALUES ('schema_version', '1');
+INSERT INTO meta (key, value) VALUES ('schema_version', '2');
 """
 
 
@@ -87,6 +88,30 @@ class CatalogEntry(BaseModel):
     total: float | None = None
     currency: str | None = None
     message_type: str | None = None
+    #: ANAF's ``data_creare`` (when the message entered SPV), parsed by
+    #: ``context._parse_created``. Nullable; needed by the delayed-invoice check.
+    created_at: dt.datetime | None = None
+
+
+class RunRecord(BaseModel):
+    """The outcome of the most recent ``anaf-sync sync`` invocation.
+
+    Written by the CLI on every exit path (success, caught boundary error, and
+    the system-mode crash excepthook) so the desktop companion can tell a
+    healthy schedule from a broken one without re-running anything. Stored as a
+    single JSON blob under the ``meta`` key ``last_run``.
+    """
+
+    finished_at: dt.datetime
+    outcome: Literal["ok", "failed", "crashed"]
+    listed: int = 0
+    archived: int = 0
+    failures: int = 0
+    #: One-line human summary of what went wrong (``None`` on success).
+    error: str | None = None
+    #: The exception class name (e.g. ``AnafAuthError``); drives the health
+    #: state's auth/config error family. ``None`` for per-message failures.
+    error_kind: str | None = None
 
 
 class FailureRecord(BaseModel):
@@ -130,11 +155,32 @@ class Archive:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         archive = cls(path, conn)
         archive._init_schema()
         if failure_retention is not None:
             archive._prune_failures(failure_retention)
         return archive
+
+    @classmethod
+    def open_readonly(cls, path: Path) -> Self:
+        """Open the archive read-only — for observers that must never write.
+
+        WAL (set by :meth:`open`) lets this connection query the catalog while a
+        scheduled sync writes, with no schema init and no pruning. Intended for
+        the desktop companion.
+
+        Raises:
+            FileNotFoundError: the database does not exist yet (no sync has run).
+        """
+        if not path.exists():
+            raise FileNotFoundError(
+                f"no archive at {path} — run `anaf-sync sync` first"
+            )
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
+        return cls(path, conn)
 
     def close(self) -> None:
         self._conn.close()
@@ -180,8 +226,8 @@ class Archive:
                 INSERT INTO messages (
                     message_id, cif, direction, saved_at, base_path, artifacts,
                     issue_date, number, partner_name, partner_cif, total,
-                    currency, message_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    currency, message_type, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(message_id) DO UPDATE SET
                     cif          = excluded.cif,
                     direction    = excluded.direction,
@@ -194,7 +240,8 @@ class Archive:
                     partner_cif  = excluded.partner_cif,
                     total        = excluded.total,
                     currency     = excluded.currency,
-                    message_type = excluded.message_type
+                    message_type = excluded.message_type,
+                    created_at   = excluded.created_at
                 """,
                 (
                     entry.message_id,
@@ -210,6 +257,7 @@ class Archive:
                     entry.total,
                     entry.currency,
                     entry.message_type,
+                    entry.created_at.isoformat() if entry.created_at else None,
                 ),
             )
             self._conn.execute(
@@ -232,6 +280,88 @@ class Archive:
                 """,
                 (message_id, now, now, error),
             )
+
+    def record_run(self, run: RunRecord) -> None:
+        """Persist the outcome of the most recent sync (see :class:`RunRecord`)."""
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('last_run', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (run.model_dump_json(),),
+            )
+
+    def last_run(self) -> RunRecord | None:
+        """The last recorded sync outcome, or ``None`` before the first run."""
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = 'last_run'"
+        ).fetchone()
+        return RunRecord.model_validate_json(row["value"]) if row is not None else None
+
+    def catalog(
+        self,
+        *,
+        search: str | None = None,
+        direction: str | None = None,
+        issued_from: dt.date | None = None,
+        issued_to: dt.date | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[CatalogEntry]:
+        """A filtered, paged slice of the archived catalog.
+
+        Ordered newest-first by ``issue_date`` then ``message_id`` (rows with no
+        issue date sort last). Filtering happens in SQL so the caller can
+        lazy-load pages instead of materialising the whole table. ``search``
+        matches ``number`` or ``partner_name`` case-insensitively.
+        """
+        where, params = self._catalog_filters(search, direction, issued_from, issued_to)
+        rows = self._conn.execute(
+            f"SELECT * FROM messages{where} "
+            "ORDER BY issue_date IS NULL, issue_date DESC, message_id DESC "
+            "LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+        return [_entry_from_row(row) for row in rows]
+
+    def catalog_count(
+        self,
+        *,
+        search: str | None = None,
+        direction: str | None = None,
+        issued_from: dt.date | None = None,
+        issued_to: dt.date | None = None,
+    ) -> int:
+        """How many archived messages match the same filters as :meth:`catalog`."""
+        where, params = self._catalog_filters(search, direction, issued_from, issued_to)
+        row = self._conn.execute(
+            f"SELECT COUNT(*) AS n FROM messages{where}", params
+        ).fetchone()
+        return int(row["n"])
+
+    @staticmethod
+    def _catalog_filters(
+        search: str | None,
+        direction: str | None,
+        issued_from: dt.date | None,
+        issued_to: dt.date | None,
+    ) -> tuple[str, list[object]]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if search:
+            clauses.append("(number LIKE ? OR partner_name LIKE ?)")
+            like = f"%{search}%"
+            params += [like, like]
+        if direction:
+            clauses.append("direction = ?")
+            params.append(direction)
+        if issued_from is not None:
+            clauses.append("issue_date >= ?")
+            params.append(issued_from.isoformat())
+        if issued_to is not None:
+            clauses.append("issue_date <= ?")
+            params.append(issued_to.isoformat())
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return where, params
 
     @property
     def count(self) -> int:
@@ -269,10 +399,26 @@ class Archive:
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
         found = row["value"] if row is not None else None
-        if found != _SCHEMA_VERSION:
-            raise ValueError(
-                f"archive at {self._path} has schema version {found!r}, "
-                f"expected {_SCHEMA_VERSION!r} — delete it to start fresh"
+        if found == _SCHEMA_VERSION:
+            return
+        if found == "1":
+            self._migrate_v1_to_v2()
+            return
+        raise ValueError(
+            f"archive at {self._path} has schema version {found!r}, "
+            f"expected {_SCHEMA_VERSION!r} — delete it to start fresh"
+        )
+
+    def _migrate_v1_to_v2(self) -> None:
+        """Add the nullable ``created_at`` column; existing rows keep NULL.
+
+        Additive and in place — the archive is a permanent catalog, so its rows
+        are never rebuilt, only extended.
+        """
+        with self._conn:
+            self._conn.execute("ALTER TABLE messages ADD COLUMN created_at TEXT")
+            self._conn.execute(
+                "UPDATE meta SET value = '2' WHERE key = 'schema_version'"
             )
 
     def _prune_failures(self, max_age: dt.timedelta) -> None:
@@ -287,3 +433,26 @@ class Archive:
             self._conn.execute(
                 "DELETE FROM failures WHERE last_failed_at < ?", (cutoff,)
             )
+
+
+def _entry_from_row(row: sqlite3.Row) -> CatalogEntry:
+    """Reconstruct a :class:`CatalogEntry` from a ``messages`` row."""
+    return CatalogEntry(
+        message_id=row["message_id"],
+        cif=row["cif"],
+        direction=row["direction"],
+        base_path=row["base_path"],
+        artifacts=json.loads(row["artifacts"]),
+        issue_date=(
+            dt.date.fromisoformat(row["issue_date"]) if row["issue_date"] else None
+        ),
+        number=row["number"],
+        partner_name=row["partner_name"],
+        partner_cif=row["partner_cif"],
+        total=row["total"],
+        currency=row["currency"],
+        message_type=row["message_type"],
+        created_at=(
+            dt.datetime.fromisoformat(row["created_at"]) if row["created_at"] else None
+        ),
+    )

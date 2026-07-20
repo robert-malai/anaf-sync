@@ -8,7 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 from types import TracebackType
-from typing import Annotated
+from typing import Annotated, Literal
 
 import structlog
 from anafpy.exceptions import AnafError
@@ -23,14 +23,15 @@ from .config import (
     load_config,
     write_default_config,
 )
-from .engine import run_sync
+from .engine import SyncReport, run_sync
+from .health import days_until_purge
 from .lock import LockHeldError, sync_lock
 from .logsink import LogMode, resolve_mode, system_log_handler
 from .scheduling import ScheduleError
 from .scheduling import install as schedule_install
 from .scheduling import status as schedule_status
 from .scheduling import uninstall as schedule_uninstall
-from .state import Archive
+from .state import Archive, RunRecord
 
 app = App(
     name="anaf-sync",
@@ -116,7 +117,43 @@ def _log_crash(
         error=f"{exc_type.__name__}: {exc}",
         traceback="".join(traceback.format_exception(exc_type, exc, tb)),
     )
+    _record_run(
+        default_state_path(),
+        outcome="crashed",
+        error=f"{exc_type.__name__}: {exc}",
+        error_kind=exc_type.__name__,
+    )
     sys.__excepthook__(exc_type, exc, tb)
+
+
+def _record_run(
+    state_path: Path,
+    *,
+    outcome: Literal["ok", "failed", "crashed"],
+    report: SyncReport | None = None,
+    error: str | None = None,
+    error_kind: str | None = None,
+) -> None:
+    """Persist the last-run record; never let a bookkeeping error mask the run.
+
+    Opens its own short-lived connection so it works on every exit path,
+    including the ones where the sync's own ``Archive`` was never opened (a
+    missing config) or has already closed.
+    """
+    try:
+        run = RunRecord(
+            finished_at=dt.datetime.now(dt.UTC),
+            outcome=outcome,
+            listed=report.listed if report else 0,
+            archived=report.downloaded if report else 0,
+            failures=len(report.failures) if report else 0,
+            error=error,
+            error_kind=error_kind,
+        )
+        with Archive.open(state_path) as state:
+            state.record_run(run)
+    except Exception:  # noqa: BLE001 — bookkeeping must never crash the run
+        logger.warning("record_run_failed", exc_info=True)
 
 
 def _fail(message: str) -> int:
@@ -199,7 +236,9 @@ async def sync(
     """Download all new e-Factura invoices into the archive."""
     config_path = _resolve_config_path(config)
     state_path = default_state_path()
-    # AnafError propagates to `main`, which formats it identically.
+    # Boundary errors are caught here (not left to `main`) so the last-run
+    # record captures their kind — the tray reads it to tell a broken auth
+    # from a merely-failing download.
     try:
         cfg = load_config(config_path)
         provider = AuthSettings.from_env().build_provider()
@@ -218,8 +257,28 @@ async def sync(
                     dry_run=dry_run,
                     redownload=redownload,
                 )
-    except (FileNotFoundError, ValueError, LockHeldError) as exc:
+    except (FileNotFoundError, ValueError, LockHeldError, AnafError) as exc:
+        # A dry run touches no state, including the last-run record.
+        if not dry_run:
+            _record_run(
+                state_path,
+                outcome="failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
         return _fail(str(exc))
+
+    if not dry_run:
+        _record_run(
+            state_path,
+            outcome="failed" if report.failures else "ok",
+            report=report,
+            error=(
+                f"{len(report.failures)} download(s) failed"
+                if report.failures
+                else None
+            ),
+        )
 
     if _log_mode is LogMode.SYSTEM:
         # One queryable summary event per run; the engine already logged the
@@ -255,13 +314,24 @@ def status(*, config: ConfigOption = None) -> int:
     auth = AuthSettings.from_env()
     credentials = "ok" if auth.client_id and auth.client_secret else "MISSING"
     print(f"auth:     ANAFPY_CLIENT_ID/SECRET {credentials}")
+    now = dt.datetime.now(dt.UTC)
     with Archive.open(default_state_path()) as archive:
         print(f"state:    {archive.path} ({archive.count} messages archived)")
+        last = archive.last_run()
+        if last is not None:
+            summary = f"{last.error} ({last.error_kind})" if last.error else "ok"
+            print(
+                f"last run: {last.finished_at:%Y-%m-%d %H:%M} {last.outcome} — "
+                f"listed {last.listed}, new {last.archived}, "
+                f"failures {last.failures}: {summary}"
+            )
         for message_id, failure in archive.failures.items():
+            days = days_until_purge(failure, now)
             print(
                 f"failing:  {message_id} — {failure.attempts} run(s) since "
                 f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
             )
+            print(f"          expires from SPV in {days} day(s)")
     if config_path.exists():
         # status is the diagnostic command — a broken config must be reported
         # in-line, never crash it with a traceback.

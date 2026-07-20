@@ -217,13 +217,15 @@ async def _archive_message(
         path = await _write_artifact(artifact, base, message, item, context, public)
         if path is not None:
             written.append(artifact.value)
+    fields = catalog_fields(item, message.view)
     return CatalogEntry(
         message_id=item.id,
         cif=cif,
         direction=direction,
         base_path=str(base),
         artifacts=written,
-        **catalog_fields(item, message.view),
+        created_at=fields.pop("created"),
+        **fields,
     )
 
 
