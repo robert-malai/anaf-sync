@@ -118,11 +118,13 @@ def uninstall() -> str:
 def status() -> str:
     if sys.platform == "win32":
         result = subprocess.run(
-            ["schtasks", "/Query", "/TN", _TASK_NAME, "/V", "/FO", "LIST"],
+            ["schtasks", "/Query", "/TN", _TASK_NAME],
             capture_output=True,
             text=True,
         )
-        return result.stdout.strip() if result.returncode == 0 else "not installed"
+        if result.returncode != 0:
+            return "not installed"
+        return f"Task Scheduler task {_TASK_NAME!r}: installed"
     if sys.platform == "darwin":
         if not _launchd_plist_path().exists():
             return "not installed"
@@ -143,25 +145,41 @@ def status() -> str:
 # -- Windows ---------------------------------------------------------------------
 
 
-def _install_windows(exe: Path, every: str | None, daily_at: str | None) -> str:
-    command = f'"{exe}" sync'
-    args = ["schtasks", "/Create", "/F", "/TN", _TASK_NAME, "/TR", command]
+def _windows_schedule(every: str | None, daily_at: str | None) -> tuple[list[str], str]:
+    """The ``/SC``-family schtasks arguments for the requested cadence.
+
+    Exact or rejected — never silently rounded: sub-day intervals map to
+    ``/SC MINUTE`` (``/MO`` caps at 1439), whole days to ``/SC DAILY``.
+
+    Raises:
+        ScheduleError: the interval is over a day but not a whole number of
+            days — Task Scheduler has no modifier that runs it exactly.
+    """
     if every is not None:
         minutes = int(parse_interval(every).total_seconds() // 60)
-        if minutes < 60:
-            args += ["/SC", "MINUTE", "/MO", str(minutes)]
-        elif minutes % 1440 == 0:
-            args += ["/SC", "DAILY", "/MO", str(minutes // 1440)]
-        else:
-            args += ["/SC", "HOURLY", "/MO", str(max(1, minutes // 60))]
-        when = f"every {every}"
-    else:
-        assert daily_at is not None
-        hour, minute = parse_daily_at(daily_at)
-        args += ["/SC", "DAILY", "/ST", f"{hour:02d}:{minute:02d}"]
-        when = f"daily at {hour:02d}:{minute:02d}"
-    _run(args)
-    return f"Task Scheduler task {_TASK_NAME!r} installed — runs {when}"
+        if minutes % 1440 == 0:
+            return ["/SC", "DAILY", "/MO", str(minutes // 1440)], f"every {every}"
+        if minutes <= 1439:
+            return ["/SC", "MINUTE", "/MO", str(minutes)], f"every {every}"
+        raise ScheduleError(
+            f"Task Scheduler cannot run every {every} exactly — use an "
+            "interval up to 24h or a whole number of days (e.g. 2d)"
+        )
+    assert daily_at is not None
+    hour, minute = parse_daily_at(daily_at)
+    when = f"daily at {hour:02d}:{minute:02d}"
+    return ["/SC", "DAILY", "/ST", f"{hour:02d}:{minute:02d}"], when
+
+
+def _install_windows(exe: Path, every: str | None, daily_at: str | None) -> str:
+    schedule, when = _windows_schedule(every, daily_at)
+    command = f'"{exe}" sync'
+    args = ["schtasks", "/Create", "/F", "/TN", _TASK_NAME, "/TR", command]
+    _run(args + schedule)
+    return (
+        f"Task Scheduler task {_TASK_NAME!r} installed — runs {when} "
+        "(only while you are logged on)"
+    )
 
 
 # -- Linux (systemd user units) ---------------------------------------------------
@@ -181,6 +199,7 @@ def _install_systemd(exe: Path, every: str | None, daily_at: str | None) -> str:
     service = f"""\
 [Unit]
 Description=Archive RO e-Factura invoices locally
+Wants=network-online.target
 After=network-online.target
 
 [Service]
