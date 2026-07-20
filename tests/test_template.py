@@ -60,6 +60,21 @@ def test_values_are_sanitised_for_the_filesystem() -> None:
     assert result.name == "FCT-2026-01_ACME -SRL- -RO-"
 
 
+def test_windows_reserved_names_are_prefixed() -> None:
+    template = PathTemplate("{name}")
+    assert template.render({"name": "NUL"}) == PurePosixPath("_NUL")
+    assert template.render({"name": "con.backup"}) == PurePosixPath("_con.backup")
+    assert template.render({"name": "lpt1"}) == PurePosixPath("_lpt1")
+    # Only exact stems are reserved — ordinary names pass untouched.
+    assert template.render({"name": "console"}) == PurePosixPath("console")
+
+
+def test_overlong_values_are_truncated() -> None:
+    template = PathTemplate("{name}")
+    result = template.render({"name": "x" * 300})
+    assert len(result.name) == 120
+
+
 def test_none_renders_as_unknown() -> None:
     template = PathTemplate("{cif}/{number}")
     result = template.render({"cif": "123", "number": None})

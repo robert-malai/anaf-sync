@@ -25,6 +25,16 @@ __all__ = ["PathTemplate", "TemplateError"]
 _ILLEGAL_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 #: Windows also rejects trailing dots/spaces on any path segment.
 _TRAILING_JUNK = re.compile(r"[. ]+$")
+#: Windows device names, reserved as any segment stem ("NUL" and "nul.zip"
+#: alike). Prefixed with "_" rather than replaced so the value stays readable.
+_WINDOWS_RESERVED = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{d}" for d in "123456789"}
+    | {f"LPT{d}" for d in "123456789"}
+)
+#: Per-value cap so a long partner name cannot push the rendered path past
+#: Windows' 260-character MAX_PATH once the root and extension are added.
+_MAX_VALUE_LENGTH = 120
 
 _PLACEHOLDER = "unknown"
 
@@ -43,7 +53,11 @@ class TemplateError(ValueError):
 
 def _sanitize_value(value: str) -> str:
     cleaned = _ILLEGAL_CHARS.sub("-", value).strip()
+    if len(cleaned) > _MAX_VALUE_LENGTH:
+        cleaned = cleaned[:_MAX_VALUE_LENGTH]
     cleaned = _TRAILING_JUNK.sub("", cleaned)
+    if cleaned.split(".", 1)[0].upper() in _WINDOWS_RESERVED:
+        cleaned = f"_{cleaned}"
     return cleaned or _PLACEHOLDER
 
 
