@@ -1,0 +1,282 @@
+"""The sync engine: list, download, render the path, write artifacts.
+
+Each run lists every message in the window and downloads the ones the state
+file has not seen. Downloads are GETs, so transient network failures and rate
+limits are retried with backoff; a message that still fails is reported and
+retried naturally on the next scheduled run.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from pathlib import Path
+
+import structlog
+from anafpy.auth import TokenProvider
+from anafpy.efactura import (
+    DownloadedMessage,
+    EFacturaClient,
+    Filter,
+    MessageListItem,
+)
+from anafpy.exceptions import AnafError, AnafRateLimitError, AnafTransportError
+from anafpy.public import PublicClient
+from pydantic import BaseModel, Field
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
+
+from .config import Artifact, Direction, SyncConfig
+from .context import build_context, direction_of
+from .state import SyncState
+from .template import PathTemplate
+
+__all__ = ["SyncReport", "run_sync"]
+
+logger = structlog.get_logger(__name__)
+
+_FILTERS: dict[Direction, Filter | None] = {
+    Direction.RECEIVED: Filter.RECEIVED,
+    Direction.SENT: Filter.SENT,
+    Direction.BOTH: None,
+}
+
+
+class SyncReport(BaseModel):
+    """Outcome of one sync run, for the CLI summary and the exit code."""
+
+    listed: int = 0
+    already_archived: int = 0
+    skipped_non_invoice: int = 0
+    downloaded: int = 0
+    would_download: int = 0  # dry-run only
+    failures: list[tuple[str, str]] = Field(default_factory=list)  # (id, error)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+
+async def run_sync(
+    config: SyncConfig,
+    provider: TokenProvider,
+    state: SyncState,
+    *,
+    days: int | None = None,
+    dry_run: bool = False,
+    redownload: bool = False,
+) -> SyncReport:
+    """Run one full sync pass over every configured CIF."""
+    report = SyncReport()
+    template = PathTemplate(config.output.template)
+    if not dry_run:  # dry runs must not touch state
+        pruned = state.prune(dt.timedelta(days=config.state_retention_days))
+        if pruned:
+            state.save()
+            logger.info(
+                "state_pruned",
+                removed=pruned,
+                retention_days=config.state_retention_days,
+            )
+    # Always production: TEST's inbox only ever holds self-uploaded fixtures,
+    # and every operation here is a read — --dry-run is the safety valve.
+    async with EFacturaClient(provider) as client:
+        public = PublicClient() if Artifact.PDF in config.output.artifacts else None
+        try:
+            for cif in config.cifs:
+                await _sync_cif(
+                    client,
+                    public,
+                    config,
+                    state,
+                    template,
+                    report,
+                    cif=cif,
+                    days=days or config.lookback_days,
+                    dry_run=dry_run,
+                    redownload=redownload,
+                )
+        finally:
+            if public is not None:
+                await public.aclose()
+    return report
+
+
+async def _sync_cif(
+    client: EFacturaClient,
+    public: PublicClient | None,
+    config: SyncConfig,
+    state: SyncState,
+    template: PathTemplate,
+    report: SyncReport,
+    *,
+    cif: str,
+    days: int,
+    dry_run: bool,
+    redownload: bool,
+) -> None:
+    log = logger.bind(cif=cif)
+    log.info("listing_messages", days=days, direction=config.direction.value)
+
+    # Materialise the listing first so a paging error surfaces before any
+    # downloads, and the count is known up front.
+    items = [
+        item
+        async for item in client.list_messages(
+            cif=cif, days=days, filter=_FILTERS[config.direction]
+        )
+    ]
+    report.listed += len(items)
+    log.info("listing_done", messages=len(items))
+
+    for item in items:
+        message_id = item.id
+        if message_id is None:
+            report.failures.append(("?", "message with no id in listing"))
+            continue
+        if direction_of(item) is None:
+            # Error notices and buyer messages carry no invoice to archive.
+            report.skipped_non_invoice += 1
+            continue
+        if state.is_downloaded(message_id) and not redownload:
+            report.already_archived += 1
+            continue
+        if dry_run:
+            report.would_download += 1
+            log.info(
+                "would_download",
+                message_id=message_id,
+                type=item.message_type,
+                details=item.details,
+            )
+            continue
+        try:
+            base = await _archive_message(
+                client, public, config, template, item, cif=cif
+            )
+        except AnafError as exc:
+            log.error("download_failed", message_id=message_id, error=str(exc))
+            report.failures.append((message_id, str(exc)))
+            state.record_failure(message_id, str(exc))  # visibility only, no gate
+            state.save()
+            continue
+        state.record(message_id, str(base), [a.value for a in config.output.artifacts])
+        state.save()  # per message: a crash never redoes or loses work
+        report.downloaded += 1
+        log.info("archived", message_id=message_id, path=str(base))
+
+
+async def _download_with_retry(
+    client: EFacturaClient, message_id: str
+) -> DownloadedMessage:
+    # descarcare is an idempotent GET: retrying is safe. Rate limits get the
+    # same treatment with the backoff growing into tens of seconds.
+    async for attempt in AsyncRetrying(
+        retry=retry_if_exception_type((AnafTransportError, AnafRateLimitError)),
+        wait=wait_exponential_jitter(initial=2.0, max=60.0),
+        stop=stop_after_attempt(4),
+        reraise=True,
+    ):
+        with attempt:
+            return await client.download(message_id)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+async def _archive_message(
+    client: EFacturaClient,
+    public: PublicClient | None,
+    config: SyncConfig,
+    template: PathTemplate,
+    item: MessageListItem,
+    *,
+    cif: str,
+) -> Path:
+    """Download one message and write its artifacts; returns the base path."""
+    assert item.id is not None
+    message = await _download_with_retry(client, item.id)
+    context = build_context(item, message.view, cif=cif)
+    base = _unique_base(
+        config.output.resolved_directory / Path(template.render(context)),
+        item.id,
+    )
+    base.parent.mkdir(parents=True, exist_ok=True)
+
+    for artifact in config.output.artifacts:
+        await _write_artifact(artifact, base, message, item, context, public)
+    return base
+
+
+def _unique_base(base: Path, message_id: str) -> Path:
+    """Avoid clobbering a different invoice that rendered the same path."""
+    probes = [base.with_suffix(ext) for ext in (".zip", ".xml", ".pdf", ".json")]
+    if any(p.exists() for p in probes):
+        return base.with_name(f"{base.name}_{message_id}")
+    return base
+
+
+async def _write_artifact(
+    artifact: Artifact,
+    base: Path,
+    message: DownloadedMessage,
+    item: MessageListItem,
+    context: dict[str, object],
+    public: PublicClient | None,
+) -> Path | None:
+    """Write one artifact next to ``base``; returns its path, or ``None`` when
+    the message has nothing to satisfy it (e.g. no signature member)."""
+    if artifact is Artifact.ZIP:
+        path = base.with_suffix(".zip")
+        path.write_bytes(message.raw_zip)
+        return path
+    if artifact is Artifact.XML:
+        if message.content_xml is None:
+            logger.warning("no_content_xml", message_id=item.id)
+            return None
+        path = base.with_suffix(".xml")
+        path.write_bytes(message.content_xml)
+        return path
+    if artifact is Artifact.SIGNATURE:
+        if message.signature_xml is None:
+            logger.warning("no_signature_xml", message_id=item.id)
+            return None
+        path = Path(f"{base}_semnatura.xml")
+        path.write_bytes(message.signature_xml)
+        return path
+    if artifact is Artifact.METADATA:
+        path = base.with_suffix(".json")
+        payload = {
+            "message": item.model_dump(),
+            "context": context,
+            "archived_at": dt.datetime.now(dt.UTC).isoformat(),
+        }
+        path.write_text(
+            json.dumps(payload, default=str, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return path
+    if artifact is Artifact.PDF:
+        return await _write_pdf(base, message, item, public)
+    raise AssertionError(f"unhandled artifact {artifact}")  # pragma: no cover
+
+
+async def _write_pdf(
+    base: Path,
+    message: DownloadedMessage,
+    item: MessageListItem,
+    public: PublicClient | None,
+) -> Path | None:
+    """Render the invoice to PDF via ANAF's public transformare service."""
+    if public is None or message.content_xml is None:
+        return None
+    # The document already passed validation at filing; skip re-validation.
+    body = await public.render_invoice_pdf(message.content_xml, validate=False)
+    if not body.startswith(b"%PDF"):
+        logger.warning("pdf_render_failed", message_id=item.id, body=body[:120])
+        return None
+    path = base.with_suffix(".pdf")
+    path.write_bytes(body)
+    return path
