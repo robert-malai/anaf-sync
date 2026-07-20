@@ -302,3 +302,17 @@ follows directly from the invariants above:
 The companion is deliberately not a second way to *do* anything — it observes,
 it configures, and it delegates every mutation to the CLI. That keeps the
 archive's correctness properties (§3) entirely in one place.
+
+**Config edits are round-trips, not rewrites.** The Setări form edits
+`config.toml` through tomlkit: it mutates only the keys the user changed and
+writes the document back atomically, so hand-written comments and layout
+survive byte-for-byte. Every edit is validated against the real `SyncConfig`
+*before* the write, so an invalid form leaves the file untouched, and the
+template preview renders through the production `PathTemplate` (never a
+reimplementation) so it can never disagree with what a sync would write. Since
+anafpy exposes no authorized-CIF listing, the follow-list offers the union of
+the configured CIFs and those already seen in the archive, plus a validated
+free-entry field — a documented deviation to revisit if anafpy grows such an
+API. Changing the schedule frequency re-installs through `scheduling.py`'s own
+functions; the tray never shells out to `schtasks`/`systemctl`/`launchctl`
+itself.

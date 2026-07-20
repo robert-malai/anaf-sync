@@ -404,3 +404,11 @@ def test_catalog_paging_with_limit_and_offset(tmp_path: Path) -> None:
         assert [e.message_id for e in archive.catalog(limit=2)] == ["a", "b"]
         assert [e.message_id for e in archive.catalog(limit=2, offset=2)] == ["c", "d"]
         assert archive.catalog_count() == 4
+
+
+def test_distinct_cifs_sorted(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        archive.record(_entry("a", "pa", cif="87654321"))
+        archive.record(_entry("b", "pb", cif="12345678"))
+        archive.record(_entry("c", "pc", cif="12345678"))  # duplicate
+        assert archive.distinct_cifs() == ["12345678", "87654321"]

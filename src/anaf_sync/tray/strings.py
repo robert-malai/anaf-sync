@@ -215,6 +215,61 @@ FAILING_LAST_ERROR = "Ultima eroare:"
 DETAILS_EMPTY = "Selectați o factură pentru detalii."
 
 
+# -- Settings view (handoff §3) -----------------------------------------------
+
+SET_COMPANY = "Companie"
+SET_ARCHIVE = "Arhivă"
+SET_SCHEDULE = "Programare"
+
+SET_CIFS = "CIF-uri urmărite"
+SET_DIRECTION = "Direcție"
+SET_LOOKBACK = "Fereastră de căutare"
+SET_DIR = "Dosar arhivă"
+SET_TEMPLATE = "Șablon de denumire"
+SET_ARTIFACTS = "Fișiere salvate"
+SET_FREQUENCY = "Frecvență"
+
+HELP_CIFS = "Lista provine din autentificarea ANAF — cel puțin un CIF rămâne selectat."
+HELP_LOOKBACK = "ANAF păstrează mesajele cel mult 60 de zile."
+
+DIR_RECEIVED = "Primite"
+DIR_SENT = "Trimise"
+DIR_BOTH = "Ambele"
+
+BTN_CHOOSE = "Alege…"
+BTN_ADD_CIF = "+ Adaugă CIF"
+ADD_CIF_PLACEHOLDER = "CIF nou"
+PREVIEW_PREFIX = "Previzualizare: "
+
+# Artifact cards: English name (mono) + Romanian description.
+ARTIFACT_DESCRIPTIONS = {
+    "zip": "arhiva semnată originală",
+    "pdf": "redarea oficială ANAF",
+    "xml": "XML-ul UBL al facturii",
+    "signature": "semnătura MF detașată",
+    "metadata": "fișier JSON cu detaliile mesajului",
+}
+
+FREQ_1H = "La fiecare oră"
+FREQ_3H = "La fiecare 3 ore"
+FREQ_6H = "La fiecare 6 ore"
+FREQ_12H = "La fiecare 12 ore"
+FREQ_DAILY = "O dată pe zi"
+
+SCHEDULE_ACTIVE = "Activă"
+SCHEDULE_INACTIVE = "Dezactivată"
+
+SAVE_NOTE = "Modificările se scriu în config.toml — fișierul rămâne editabil manual"
+BTN_CANCEL = "Renunță"
+BTN_SAVE = "Salvează modificările"
+SETTINGS_NEEDS_INIT = "Rulați `anaf-sync init` pentru a crea un config.toml."
+
+
+def lookback_value(days: int) -> str:
+    """``"60 zile"`` — the slider's value label."""
+    return f"{_noun(days, 'zi', 'zile')}"
+
+
 def problems_chip(count: int) -> str:
     """``"Probleme"`` / ``"Probleme (1)"`` — suffix the count when non-zero."""
     return FILTER_PROBLEMS if count == 0 else f"{FILTER_PROBLEMS} ({count})"

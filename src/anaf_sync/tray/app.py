@@ -108,7 +108,7 @@ class TrayApp:
 
         self._menu.addSeparator()
         self._settings_action = QAction(strings.MENU_SETTINGS, self._menu)
-        self._settings_action.setVisible(False)  # arrives in M3
+        self._settings_action.triggered.connect(self._open_settings)
         self._menu.addAction(self._settings_action)
 
         self._menu.addSeparator()
@@ -221,9 +221,16 @@ class TrayApp:
                 config_path=self._config_path,
                 on_retry=self._runner.start,
             )
+            # A config save from Setări refreshes the tray status immediately.
+            self._window.config_saved.connect(self.refresh)
         self._window.show()
         self._window.raise_()
         self._window.activateWindow()
+
+    def _open_settings(self) -> None:
+        self._open_window()
+        if self._window is not None:
+            self._window.show_settings()
 
     def _open_folder(self) -> None:
         if self._output_dir is None:

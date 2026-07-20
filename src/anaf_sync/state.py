@@ -363,6 +363,17 @@ class Archive:
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         return where, params
 
+    def distinct_cifs(self) -> list[str]:
+        """Every CIF that appears in the archive, sorted — for the Settings UI.
+
+        The tray offers these (unioned with the configured CIFs) as the
+        follow-list choices, since anafpy exposes no authorized-CIF API.
+        """
+        rows = self._conn.execute(
+            "SELECT DISTINCT cif FROM messages ORDER BY cif"
+        ).fetchall()
+        return [row["cif"] for row in rows]
+
     @property
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM messages").fetchone()

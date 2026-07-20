@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QModelIndex, Qt, QUrl
+from PySide6.QtCore import QDate, QModelIndex, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -38,6 +38,7 @@ from .calendar import RangeCalendar
 from .delegates import CatalogDelegate
 from .details import DetailsPane
 from .models import CatalogFilters, CatalogModel
+from .settings_view import SettingsView
 from .theme import Theme, current_theme, window_qss
 
 __all__ = ["MainWindow", "reveal_in_file_manager"]
@@ -48,7 +49,10 @@ _COL_WIDTHS = {0: 52, 1: 88, 3: 76, 4: 96}  # column 2 (Partener) flexes
 
 
 class MainWindow(QMainWindow):
-    """The archive browser window (Facturi + Setări placeholder)."""
+    """The archive browser window (Facturi + Setări)."""
+
+    #: Emitted after Setări writes ``config.toml`` (the tray refreshes on it).
+    config_saved = Signal()
 
     def __init__(
         self,
@@ -104,7 +108,7 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._build_facturi())
-        self._stack.addWidget(self._build_settings_placeholder())
+        self._stack.addWidget(self._build_settings())
         body_layout.addWidget(self._stack, 1)
 
         outer.addWidget(body, 1)
@@ -256,13 +260,21 @@ class MainWindow(QMainWindow):
         self._table = table
         return table
 
-    def _build_settings_placeholder(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label = QLabel(strings.SIDEBAR_SETTINGS)
-        layout.addWidget(label)
-        return page
+    def _build_settings(self) -> QWidget:
+        self._settings = SettingsView(
+            state_path=self._state_path, config_path=self._config_path
+        )
+        self._settings.saved.connect(self._on_config_saved)
+        return self._settings
+
+    def _on_config_saved(self) -> None:
+        self.refresh()
+        self.config_saved.emit()
+
+    def show_settings(self) -> None:
+        """Switch to the Setări page (used by the tray's Setări… item)."""
+        self._nav_settings.setChecked(True)
+        self._stack.setCurrentIndex(1)
 
     def _chip(self, text: str) -> QToolButton:
         chip = QToolButton()
@@ -352,6 +364,7 @@ class MainWindow(QMainWindow):
         self._delegate.set_theme(theme)
         self._details.set_theme(theme)
         self._calendar.set_theme(theme)
+        self._settings.set_theme(theme)
         if self._table is not None:
             self._table.viewport().update()
 
