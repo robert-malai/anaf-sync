@@ -2,8 +2,8 @@
 
 A small JSON file keyed by ANAF message id. It is what makes the scheduled run
 idempotent: every run lists the full retention window and this file decides
-what is new. Saved after every message, atomically, so a crash mid-run never
-loses or duplicates work.
+what is new. Every mutation persists atomically before it returns, so a crash
+mid-run never loses or duplicates work.
 """
 
 from __future__ import annotations
@@ -48,7 +48,12 @@ class _StateFile(BaseModel):
 
 
 class SyncState:
-    """The state file, loaded once per run and rewritten atomically."""
+    """The state file, loaded once per run.
+
+    Durability is the class's contract, not the caller's: every mutating
+    method rewrites the file atomically (temp file + rename) before
+    returning, so callers cannot forget to save.
+    """
 
     def __init__(self, path: Path, data: _StateFile) -> None:
         self._path = path
@@ -72,6 +77,7 @@ class SyncState:
             artifacts=artifacts,
         )
         self._data.failures.pop(message_id, None)  # archived at last
+        self._save()
 
     def record_failure(self, message_id: str, error: str) -> None:
         now = dt.datetime.now(dt.UTC)
@@ -84,9 +90,11 @@ class SyncState:
             existing.last_failed_at = now
             existing.attempts += 1
             existing.error = error
+        self._save()
 
     def forget(self, message_id: str) -> None:
-        self._data.downloaded.pop(message_id, None)
+        if self._data.downloaded.pop(message_id, None) is not None:
+            self._save()
 
     def prune(self, max_age: dt.timedelta) -> int:
         """Drop records older than ``max_age``; returns how many were removed.
@@ -112,7 +120,10 @@ class SyncState:
         ]
         for message_id in stale_failures:
             del self._data.failures[message_id]
-        return len(stale) + len(stale_failures)
+        removed = len(stale) + len(stale_failures)
+        if removed:
+            self._save()
+        return removed
 
     @property
     def count(self) -> int:
@@ -126,7 +137,7 @@ class SyncState:
     def path(self) -> Path:
         return self._path
 
-    def save(self) -> None:
+    def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = self._data.model_dump_json(indent=2)
         fd, tmp_name = tempfile.mkstemp(

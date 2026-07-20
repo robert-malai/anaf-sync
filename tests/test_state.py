@@ -14,8 +14,8 @@ def test_roundtrip(tmp_path: Path) -> None:
     assert state.count == 0
 
     state.record("m1", "123/received/f1", ["zip", "xml"])
-    state.save()
 
+    # record() alone must persist — nothing else is called between messages.
     reloaded = SyncState.load(path)
     assert reloaded.is_downloaded("m1")
     assert reloaded.count == 1
@@ -34,7 +34,6 @@ def test_failure_roundtrip(tmp_path: Path) -> None:
     state = SyncState.load(path)
     state.record_failure("m1", "first error")
     state.record_failure("m1", "second error")
-    state.save()
 
     failure = SyncState.load(path).failures["m1"]
     assert failure.attempts == 2
@@ -87,4 +86,5 @@ def test_prune_drops_only_stale_records(tmp_path: Path) -> None:
     assert state.prune(dt.timedelta(days=90)) == 1
     assert not state.is_downloaded("old")
     assert state.is_downloaded("fresh")
+    assert not SyncState.load(path).is_downloaded("old")  # prune persisted
     assert state.prune(dt.timedelta(days=90)) == 0  # second pass is a no-op

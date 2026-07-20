@@ -76,7 +76,6 @@ async def run_sync(
     if not dry_run:  # dry runs must not touch state
         pruned = state.prune(dt.timedelta(days=config.state_retention_days))
         if pruned:
-            state.save()
             logger.info(
                 "state_pruned",
                 removed=pruned,
@@ -162,10 +161,9 @@ async def _sync_cif(
             log.error("download_failed", message_id=message_id, error=str(exc))
             report.failures.append((message_id, str(exc)))
             state.record_failure(message_id, str(exc))  # visibility only, no gate
-            state.save()
             continue
+        # record() persists atomically: a crash never redoes or loses work.
         state.record(message_id, str(base), [a.value for a in config.output.artifacts])
-        state.save()  # per message: a crash never redoes or loses work
         report.downloaded += 1
         log.info("archived", message_id=message_id, path=str(base))
 
