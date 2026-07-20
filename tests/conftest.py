@@ -9,6 +9,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Run Qt headless in tests/CI: the tray suites (pytest-qt) must never try to
+# reach a real display. Harmless when PySide6 is not installed.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 _ENV_FILE = Path(__file__).parent.parent / ".env"
 
 
