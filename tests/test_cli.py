@@ -10,7 +10,7 @@ from anaf_sync import cli
 @pytest.fixture(autouse=True)
 def _isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep every test away from the real state dir and OS scheduler."""
-    monkeypatch.setattr(cli, "default_state_path", lambda: tmp_path / "state.json")
+    monkeypatch.setattr(cli, "default_state_path", lambda: tmp_path / "state.db")
     monkeypatch.setattr(cli, "schedule_status", lambda: "not installed")
 
 

@@ -32,8 +32,8 @@ from tenacity import (
 )
 
 from .config import Artifact, Direction, SyncConfig
-from .context import build_context, direction_of
-from .state import SyncState
+from .context import build_context, catalog_fields, direction_of
+from .state import Archive, CatalogEntry
 from .template import PathTemplate
 
 __all__ = ["SyncReport", "run_sync"]
@@ -66,7 +66,7 @@ class SyncReport(BaseModel):
 async def run_sync(
     config: SyncConfig,
     provider: TokenProvider,
-    state: SyncState,
+    state: Archive,
     *,
     days: int | None = None,
     dry_run: bool = False,
@@ -75,14 +75,6 @@ async def run_sync(
     """Run one full sync pass over every configured CIF."""
     report = SyncReport()
     template = PathTemplate(config.output.template)
-    if not dry_run:  # dry runs must not touch state
-        pruned = state.prune(dt.timedelta(days=config.state_retention_days))
-        if pruned:
-            logger.info(
-                "state_pruned",
-                removed=pruned,
-                retention_days=config.state_retention_days,
-            )
     # Always production: TEST's inbox only ever holds self-uploaded fixtures,
     # and every operation here is a read — --dry-run is the safety valve.
     async with EFacturaClient(provider) as client:
@@ -111,7 +103,7 @@ async def _sync_cif(
     client: EFacturaClient,
     public: PublicClient | None,
     config: SyncConfig,
-    state: SyncState,
+    state: Archive,
     template: PathTemplate,
     report: SyncReport,
     *,
@@ -145,7 +137,7 @@ async def _sync_cif(
             # Error notices and buyer messages carry no invoice to archive.
             report.skipped_non_invoice += 1
             continue
-        if state.is_downloaded(message_id) and not redownload:
+        if state.is_archived(message_id) and not redownload:
             report.already_archived += 1
             continue
         if dry_run:
@@ -158,7 +150,7 @@ async def _sync_cif(
             )
             continue
         try:
-            base, written = await _archive_message(
+            entry = await _archive_message(
                 client, public, config, state, template, item, cif=cif
             )
         except AnafError as exc:
@@ -166,10 +158,15 @@ async def _sync_cif(
             report.failures.append((message_id, str(exc)))
             state.record_failure(message_id, str(exc))  # visibility only, no gate
             continue
-        # record() persists atomically: a crash never redoes or loses work.
-        state.record(message_id, str(base), written)
+        # record() commits one transaction: a crash never redoes or loses work.
+        state.record(entry)
         report.downloaded += 1
-        log.info("archived", message_id=message_id, path=str(base), artifacts=written)
+        log.info(
+            "archived",
+            message_id=message_id,
+            path=entry.base_path,
+            artifacts=entry.artifacts,
+        )
 
 
 async def _download_with_retry(
@@ -192,22 +189,24 @@ async def _archive_message(
     client: EFacturaClient,
     public: PublicClient | None,
     config: SyncConfig,
-    state: SyncState,
+    state: Archive,
     template: PathTemplate,
     item: MessageListItem,
     *,
     cif: str,
-) -> tuple[Path, list[str]]:
-    """Download one message and write its artifacts.
+) -> CatalogEntry:
+    """Download one message, write its artifacts, and build its catalog entry.
 
-    Returns the base path and the artifact values actually written — the
-    state record must describe what is on disk, not what was configured.
+    The entry describes what is on disk (the base path, the artifact values
+    actually written), not what was configured, plus the best-effort catalog
+    fields projected from the message and its view.
     """
     assert item.id is not None
+    direction = direction_of(item)
+    assert direction is not None  # non-invoice messages are filtered upstream
     message = await _download_with_retry(client, item.id)
     context = build_context(item, message.view, cif=cif)
-    base = _claim_base(
-        state,
+    base = state.claim_base(
         config.output.resolved_directory / Path(template.render(context)),
         item.id,
     )
@@ -218,22 +217,14 @@ async def _archive_message(
         path = await _write_artifact(artifact, base, message, item, context, public)
         if path is not None:
             written.append(artifact.value)
-    return base, written
-
-
-def _claim_base(state: SyncState, base: Path, message_id: str) -> Path:
-    """Avoid clobbering a different invoice that rendered the same path.
-
-    The state file is the registry of ownership: a base recorded for another
-    message gets an id suffix; anything else — including this message's own
-    prior path on ``--redownload``, and leftovers from a run that crashed
-    before recording — is claimed as-is and overwritten in place, never
-    duplicated.
-    """
-    owner = state.owner_of(str(base))
-    if owner is not None and owner != message_id:
-        return base.with_name(f"{base.name}_{message_id}")
-    return base
+    return CatalogEntry(
+        message_id=item.id,
+        cif=cif,
+        direction=direction,
+        base_path=str(base),
+        artifacts=written,
+        **catalog_fields(item, message.view),
+    )
 
 
 async def _write_artifact(

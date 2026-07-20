@@ -34,7 +34,7 @@ is considered done.
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |
 | `logsink.py` | console/system log-mode detection + native sinks: Event Log, os_log, journald |
-| `state.py` | JSON record of archived message ids (idempotence) + failure traces (visibility only, never a retry gate) |
+| `state.py` | SQLite `Archive`: dedupe gate + permanent catalog of archived messages (idempotence) + pruned failure traces (visibility only, never a retry gate) |
 | `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd |
 
 ## Invariants — do not break
@@ -43,8 +43,10 @@ is considered done.
   `ANAFPY_CLIENT_SECRET` and the token store written by `anafpy auth login`
   (`ANAFPY_TOKEN_STORE`, `ANAFPY_TOKEN_STORE_BACKEND`). Never introduce
   anaf-sync-specific credential storage or config keys.
-- **Idempotence.** `state.json` is saved atomically after *every* archived
-  message. A crash mid-run must never lose or duplicate work.
+- **Idempotence.** The archive DB commits one transaction per archived
+  message (WAL, `synchronous=NORMAL`). A crash mid-run must never lose or
+  duplicate work; downloaded records are permanent, so the dedupe gate is
+  "was this message id *ever* archived".
 - **Path safety.** Every substituted template value is sanitised
   (`template.py`); rendered paths must stay relative and inside the output
   root. Windows-illegal characters and trailing dots/spaces are handled there

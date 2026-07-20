@@ -30,8 +30,9 @@ uv run mypy src                   # strict typing — must stay clean
   before changing architecture-level behaviour.
 - [CLAUDE.md](CLAUDE.md) — the architecture map, working conventions, and the
   invariants that must not break: auth belongs to anafpy (never introduce
-  anaf-sync-specific credentials), idempotent atomically-saved state, all path
-  logic behind the `template.py` choke point, errors caught only at the CLI
+  anaf-sync-specific credentials), idempotence via one committed transaction
+  per archived message, all path logic behind the `template.py` choke point,
+  errors caught only at the CLI
   boundary, and everything cross-platform (Windows/Linux/macOS).
 
 anafpy's API is best learned from its installed source under
@@ -49,7 +50,7 @@ mocking HTTP.
 [tests/test_sync_live.py](tests/test_sync_live.py) exercises the real ANAF
 **production** endpoints, strictly read-only — anaf-sync never files anything,
 so unlike anafpy's roundtrip suites there is no TEST-environment upload here.
-Archives and state land in pytest tmp dirs; your real archive and `state.json`
+Archives and state land in pytest tmp dirs; your real archive and `state.db`
 are never touched.
 
 They need a repo-root `.env` (gitignored) with `ANAFPY_CLIENT_ID`,

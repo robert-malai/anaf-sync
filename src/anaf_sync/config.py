@@ -52,8 +52,8 @@ def default_env_path() -> Path:
 
 
 def default_state_path() -> Path:
-    """``state.json`` in the platform state dir (survives config wipes)."""
-    return platformdirs.user_state_path(APP_NAME, appauthor=False) / "state.json"
+    """``state.db`` in the platform state dir (survives config wipes)."""
+    return platformdirs.user_state_path(APP_NAME, appauthor=False) / "state.db"
 
 
 _DEFAULT_TEMPLATE = (
@@ -105,8 +105,9 @@ class SyncConfig(BaseModel):
     cifs: list[str] = Field(min_length=1)
     direction: Direction = Direction.RECEIVED
     lookback_days: int = Field(default=60, ge=1, le=60)
-    # Floor of 60: pruning records ANAF can still list would re-download them.
-    state_retention_days: int = Field(default=90, ge=60)
+    # Only failure traces are pruned (observability-only); downloaded records
+    # are the permanent catalog, so no floor is needed to protect them.
+    failure_retention_days: int = Field(default=90, ge=1)
     output: OutputConfig = OutputConfig()
 
     @model_validator(mode="before")
@@ -213,10 +214,12 @@ direction = "received"
 # How far back each run looks (1-60; ANAF purges messages after 60 days).
 lookback_days = 60
 
-# How long to keep state-file records of already-archived messages, in days
-# (minimum 60). Past ANAF's 60-day window a message can never be listed again,
-# so older records are pruned at the start of each run to keep state.json small.
-state_retention_days = 90
+# How long to keep failure traces of messages that keep failing to download,
+# in days. These are shown by `anaf-sync status` so a persistent failure is
+# visible before ANAF's 60-day window closes on it; older ones are pruned at
+# the start of each run. Archived-message records are kept forever (the archive
+# is a permanent catalog) and are never affected by this.
+failure_retention_days = 90
 
 [output]
 # Root folder for the archive (created if missing; ~ is expanded).

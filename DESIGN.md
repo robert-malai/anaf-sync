@@ -21,8 +21,10 @@ keep its own copy. The goals, in order:
    development machine).
 
 Non-goals: uploading/filing invoices, a GUI, multi-tenant server operation,
-long-term document management (search, OCR, bookkeeping integration). The
-archive is plain files; downstream tools take it from there.
+OCR, bookkeeping integration. The archive is plain files; downstream tools
+take it from there. A local browse/search UI over the archive catalog is on
+the roadmap (§9) — the SQLite store (§3) already records what it will need —
+but nothing here queries or serves that catalog yet.
 
 ## 2. Position in the anafpy ecosystem
 
@@ -47,49 +49,67 @@ early error rather than a warning.
 ## 3. The sync model: stateless window, stateful archive
 
 Each run lists the **full lookback window** (default the whole 60 days) and
-dedupes against a local state file, rather than tracking a "last synced"
+dedupes against a local archive database, rather than tracking a "last synced"
 timestamp.
 
 Rationale: a timestamp cursor is fragile in exactly the ways that lose
 invoices — clock skew, a failed run advancing the cursor, ANAF's listing
 being eventually-consistent at the window edge. Listing is cheap (paginated
-JSON); downloads are the expensive part, and the state file already gates
-those. With overlapping windows every run gets a fresh chance at anything
-previously missed, and a message only leaves the retry pool by being archived.
+JSON); downloads are the expensive part, and the archive already gates those.
+With overlapping windows every run gets a fresh chance at anything previously
+missed, and a message only leaves the retry pool by being archived.
+
+**The store is SQLite** (`state.py`, `Archive`), stdlib `sqlite3`, no new
+dependency. It replaced an atomic-JSON file for one reason beyond size: it is
+also the **permanent catalog** the future UI (§9) browses — partner, date,
+number, direction, total — which a window-bounded, pruned JSON file could
+never be. `messages` is keyed by ANAF message id, with `base_path` a `UNIQUE`
+column (the path registry, below) and best-effort catalog columns projected
+from the UBL view. `failures` and a `meta` (`schema_version`) table round it
+out. On open, a fresh DB gets the schema written; an existing one with a
+mismatched `schema_version` raises `ValueError` (the version check is the only
+forward-compatibility hook — no migration framework, and no user data to
+migrate). A corrupt DB raises `sqlite3.DatabaseError`, which crashes the run
+by design; deleting the file is safe recovery, costing at most a 60-day
+re-download.
 
 Mechanics (`engine.py` + `state.py`):
 
 - The listing is materialised first so a pagination error aborts before any
   download work.
-- `state.json` maps message id → record (when, where, which artifacts). It is
-  written **atomically after every archived message** (temp file + rename,
-  same pattern as anafpy's `FileTokenStore`), so a crash mid-run redoes at
-  most the in-flight message — and that redo is harmless because downloads
-  are idempotent GETs.
+- Each mutating method **commits one transaction before returning** — durability
+  is the `Archive`'s contract, not the caller's — so a crash mid-run redoes at
+  most the in-flight message, harmless because downloads are idempotent GETs.
+  `journal_mode=WAL` with `synchronous=NORMAL` can lose at most the last commit
+  on power loss (one harmless re-download next run) and lets the future UI read
+  while a sync writes. Whole-run serialization is a separate concern, held by
+  the `filelock`-based `sync_lock` (`lock.py`): the DB cannot serialize runs.
+- **Downloaded records are permanent.** Past ANAF's 60-day retention a message
+  id can never be listed again, so keeping its record forever can never cause
+  a spurious skip — and the dedupe gate is simply "was this id *ever*
+  archived". Permanence is what turns the store into a lifetime catalog; there
+  is no pruning of `messages`.
 - Failures are per-message: an `AnafError` on one download is recorded in the
   `SyncReport` and the run continues. The next scheduled run retries it
-  naturally, because it is still absent from the state file. Anything outside
-  the `AnafError` hierarchy is a bug and crashes the run loudly.
-- Persistent failures also leave a trace in the state file (first/last attempt,
-  count, last error) so `anaf-sync status` can surface a message that keeps
-  failing before the 60-day window closes on it. These records are
+  naturally, because it is still absent from the archive. Anything outside the
+  `AnafError` hierarchy is a bug and crashes the run loudly.
+- Persistent failures also leave a trace in the `failures` table (first/last
+  attempt, count, last error) so `anaf-sync status` can surface a message that
+  keeps failing before the 60-day window closes on it. These records are
   **observability only** — they must never gate a retry; the record is cleared
   the moment the message finally archives, and pruned once its last attempt
-  ages past `state_retention_days`.
+  ages past `failure_retention_days`. Only failure traces are pruned, because
+  only they go stale; the config key (default 90, `ge=1`, no floor) needs no
+  60-day floor now that downloaded records are never at risk from it.
 - Transient transport and rate-limit errors retry in-process with
   exponential-jitter backoff (tenacity, 4 attempts) before counting as a
   failure. Only the idempotent download GET retries; mirroring anafpy's
   "single transparent call" stance, nothing non-idempotent ever does.
-- Records older than `state_retention_days` (default 90) are pruned at the
-  start of each non-dry run: past ANAF's 60-day retention a message id can
-  never be listed again, so its record gates nothing. The configured value is
-  floored at 60 for exactly that reason — pruning younger records would
-  re-download messages still in the window. This keeps `state.json` bounded
-  by the window, not by the archive's lifetime.
 
-`--redownload` bypasses the state gate (re-fetch everything, e.g. after
+`--redownload` bypasses the dedupe gate (re-fetch everything, e.g. after
 changing the template); `--dry-run` reports what would be fetched without
-touching disk or state.
+touching disk or state — it opens the `Archive` without a retention argument,
+so even failure-trace pruning is skipped.
 
 ## 4. Path templating
 
@@ -126,13 +146,16 @@ template serves both received and sent archives. Party CIFs prefer the
 invoice's own VAT fields and fall back to what anafpy extracts from the
 listing's `detalii` prose (ANAF never sends them as structured fields).
 
-Base path collisions are resolved against the state file, which doubles as
-the registry of which message owns which path: a base recorded for a
-*different* message gets a `_{message_id}` suffix (two invoices may
-legitimately render the same name), while an unowned base is claimed and
-overwritten in place — deliberately, so `--redownload` refreshes files where
-they are and leftovers from a run that crashed before recording are healed
-rather than duplicated.
+Base path collisions are resolved by `Archive.claim_base` against the
+`base_path` `UNIQUE` column, which doubles as the registry of which message
+owns which path: a base recorded for a *different* message gets a
+`_{message_id}` suffix (two invoices may legitimately render the same name),
+while an unowned base — or this message's own prior path — is claimed and
+overwritten in place. That policy lives in the store, not the engine, so the
+engine holds no collision logic; and because downloaded records are permanent
+(§3), the registry now spans the archive's whole lifetime. Deliberately,
+`--redownload` refreshes files where they are and leftovers from a run that
+crashed before recording are healed rather than duplicated.
 
 ## 5. Artifacts
 
@@ -171,9 +194,9 @@ Two layers, on purpose:
   family (§2), plus `ANAF_SYNC_CONFIG` to relocate the config file. Secrets
   never live in the TOML.
 
-State (`state.json`) lives in the platformdirs *state* dir, separate from
-config: wiping or versioning configuration must not forget what has been
-archived.
+The archive database (`state.db`) lives in the platformdirs *state* dir,
+separate from config: wiping or versioning configuration must not forget what
+has been archived — and now must not forget the catalog either.
 
 ## 7. Scheduling: the OS's job, not ours
 
@@ -225,8 +248,13 @@ Mirrors anafpy's hybrid model:
 - **Sequential downloads.** Deliberate: ANAF enforces daily call quotas and
   rate limits, and a nightly batch is not latency-sensitive. Concurrency is
   the first knob to turn if volumes ever demand it.
-- **State is a JSON file.** Right up to tens of thousands of messages; SQLite
-  is the successor if listing volumes or query needs grow.
+- **Archive UI over the catalog.** The SQLite store (§3) already records the
+  catalog tier (partner, date, number, direction, total, currency) the future
+  browse/search UI needs; the schema is the commitment, but no read/query
+  interface exists yet — it waits for the UI to define its needs rather than
+  guessing them. Full-text search (SQLite **FTS5**) and a `reindex` command to
+  backfill/rebuild catalog columns from the on-disk artifacts are the natural
+  next steps there.
 - **Purge awareness, not purge alerts.** A message that fails for 60 days
   straight ages out of ANAF's window and is lost. Failures are visible in
   every run's report and exit code; an explicit "about to age out" warning

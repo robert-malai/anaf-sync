@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import sys
 import traceback
@@ -29,7 +30,7 @@ from .scheduling import ScheduleError
 from .scheduling import install as schedule_install
 from .scheduling import status as schedule_status
 from .scheduling import uninstall as schedule_uninstall
-from .state import SyncState
+from .state import Archive
 
 app = App(
     name="anaf-sync",
@@ -192,7 +193,7 @@ async def sync(
     ] = False,
     redownload: Annotated[
         bool,
-        Parameter(negative="", help="Ignore the state file and fetch everything."),
+        Parameter(negative="", help="Ignore the dedupe gate and fetch everything."),
     ] = False,
 ) -> int:
     """Download all new e-Factura invoices into the archive."""
@@ -203,17 +204,20 @@ async def sync(
         cfg = load_config(config_path)
         provider = AuthSettings.from_env().build_provider()
         # One run at a time: overlapping scheduled passes would download the
-        # same messages twice and clobber each other's state file.
+        # same messages twice and race each other's writes to the archive DB.
         with sync_lock(state_path.with_name("sync.lock")):
-            state = SyncState.load(state_path)
-            report = await run_sync(
-                cfg,
-                provider,
-                state,
-                days=days,
-                dry_run=dry_run,
-                redownload=redownload,
+            retention = (
+                None if dry_run else dt.timedelta(days=cfg.failure_retention_days)
             )
+            with Archive.open(state_path, failure_retention=retention) as state:
+                report = await run_sync(
+                    cfg,
+                    provider,
+                    state,
+                    days=days,
+                    dry_run=dry_run,
+                    redownload=redownload,
+                )
     except (FileNotFoundError, ValueError, LockHeldError) as exc:
         return _fail(str(exc))
 
@@ -251,13 +255,13 @@ def status(*, config: ConfigOption = None) -> int:
     auth = AuthSettings.from_env()
     credentials = "ok" if auth.client_id and auth.client_secret else "MISSING"
     print(f"auth:     ANAFPY_CLIENT_ID/SECRET {credentials}")
-    state = SyncState.load(default_state_path())
-    print(f"state:    {state.path} ({state.count} messages archived)")
-    for message_id, failure in state.failures.items():
-        print(
-            f"failing:  {message_id} — {failure.attempts} run(s) since "
-            f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
-        )
+    with Archive.open(default_state_path()) as archive:
+        print(f"state:    {archive.path} ({archive.count} messages archived)")
+        for message_id, failure in archive.failures.items():
+            print(
+                f"failing:  {message_id} — {failure.attempts} run(s) since "
+                f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
+            )
     if config_path.exists():
         # status is the diagnostic command — a broken config must be reported
         # in-line, never crash it with a traceback.

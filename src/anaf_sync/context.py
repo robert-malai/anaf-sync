@@ -8,6 +8,7 @@ Missing values stay ``None`` — the template renders them as ``unknown``.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from decimal import Decimal
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 from anafpy.efactura import MessageListItem
 from anafpy.efactura.authoring import InvoiceDocument
 
-__all__ = ["DirectionLabel", "build_context", "direction_of"]
+__all__ = ["DirectionLabel", "build_context", "catalog_fields", "direction_of"]
 
 #: "received" | "sent" — narrow alias for readability. Deliberately not the
 #: config.Direction enum: that one is the *filter* the user configures (and
@@ -81,21 +82,30 @@ def _party_cif(vat_id: str | None, *fallbacks: str | None) -> str | None:
     return None
 
 
-def build_context(
-    item: MessageListItem,
-    view: InvoiceDocument | None,
-    *,
-    cif: str,
-) -> dict[str, Any]:
-    """The full variable set available to the path template.
+@dataclasses.dataclass(frozen=True)
+class _Invoice:
+    """The invoice fields projected from one message + optional UBL view.
 
-    Args:
-        item: the message-list entry the download originated from.
-        view: the parsed flat invoice, when the content was readable UBL.
-        cif: the CIF this sync run queried (the "own" company).
+    The single parsing choke point behind both the path context and the
+    catalog projection, so the two can never drift on how a field is derived.
     """
-    direction = direction_of(item)
 
+    direction: DirectionLabel | None
+    number: str | None
+    issue_date: dt.date | None
+    due_date: dt.date | None
+    currency: str | None
+    total: Decimal | None
+    kind: str | None
+    seller_name: str | None
+    seller_cif: str | None
+    buyer_name: str | None
+    buyer_cif: str | None
+    partner_name: str | None
+    partner_cif: str | None
+
+
+def _project(item: MessageListItem, view: InvoiceDocument | None) -> _Invoice:
     number: str | None = None
     issue_date: dt.date | None = None
     due_date: dt.date | None = None
@@ -127,12 +137,44 @@ def build_context(
         seller_cif = _digits(item.sender_cif)
         buyer_cif = _digits(item.receiver_cif)
 
+    direction = direction_of(item)
     if direction == "sent":
         partner_name, partner_cif = buyer_name, buyer_cif
     else:
         # Received — and the safe default when the type is unrecognised.
         partner_name, partner_cif = seller_name, seller_cif
 
+    return _Invoice(
+        direction=direction,
+        number=number,
+        issue_date=issue_date,
+        due_date=due_date,
+        currency=currency,
+        total=total,
+        kind=kind,
+        seller_name=seller_name,
+        seller_cif=seller_cif,
+        buyer_name=buyer_name,
+        buyer_cif=buyer_cif,
+        partner_name=partner_name,
+        partner_cif=partner_cif,
+    )
+
+
+def build_context(
+    item: MessageListItem,
+    view: InvoiceDocument | None,
+    *,
+    cif: str,
+) -> dict[str, Any]:
+    """The full variable set available to the path template.
+
+    Args:
+        item: the message-list entry the download originated from.
+        view: the parsed flat invoice, when the content was readable UBL.
+        cif: the CIF this sync run queried (the "own" company).
+    """
+    inv = _project(item, view)
     created = _parse_created(item.created_at)
     return {
         "message_id": item.id,
@@ -141,18 +183,39 @@ def build_context(
         "created": created,
         "created_month": _ro_month(created),
         "cif": _digits(cif) or cif,
-        "direction": direction,
-        "number": number,
-        "issue_date": issue_date,
-        "issue_month": _ro_month(issue_date),
-        "due_date": due_date,
-        "currency": currency,
-        "total": total,
-        "kind": kind,
-        "seller_name": seller_name,
-        "seller_cif": seller_cif,
-        "buyer_name": buyer_name,
-        "buyer_cif": buyer_cif,
-        "partner_name": partner_name,
-        "partner_cif": partner_cif,
+        "direction": inv.direction,
+        "number": inv.number,
+        "issue_date": inv.issue_date,
+        "issue_month": _ro_month(inv.issue_date),
+        "due_date": inv.due_date,
+        "currency": inv.currency,
+        "total": inv.total,
+        "kind": inv.kind,
+        "seller_name": inv.seller_name,
+        "seller_cif": inv.seller_cif,
+        "buyer_name": inv.buyer_name,
+        "buyer_cif": inv.buyer_cif,
+        "partner_name": inv.partner_name,
+        "partner_cif": inv.partner_cif,
+    }
+
+
+def catalog_fields(
+    item: MessageListItem, view: InvoiceDocument | None
+) -> dict[str, Any]:
+    """The catalog-tier columns for one message (see ``state.CatalogEntry``).
+
+    Best-effort/``None`` throughout, projected from the same sources as
+    :func:`build_context`. ``total`` is narrowed from ``Decimal`` to ``float``
+    for the catalog's ``REAL`` column.
+    """
+    inv = _project(item, view)
+    return {
+        "issue_date": inv.issue_date,
+        "number": inv.number,
+        "partner_name": inv.partner_name,
+        "partner_cif": inv.partner_cif,
+        "total": float(inv.total) if inv.total is not None else None,
+        "currency": inv.currency,
+        "message_type": item.message_type,
     }

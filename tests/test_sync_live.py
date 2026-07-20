@@ -3,8 +3,8 @@
 Unlike anafpy's roundtrip suites, nothing here ever files a document: anaf-sync
 is a pure reader, so every test is strictly read-only — listing, downloading,
 and the public ``transformare`` PDF rendering, exactly what a scheduled run
-does. Archives and state files land in pytest tmp dirs; the user's real archive
-and ``state.json`` are never touched.
+does. Archives and databases land in pytest tmp dirs; the user's real archive
+and ``state.db`` are never touched.
 
 Needs real credentials + a token store from ``anafpy auth login`` (a repo-root
 ``.env`` is loaded by conftest); run explicitly:
@@ -36,7 +36,7 @@ from anaf_sync.config import (
 )
 from anaf_sync.context import direction_of
 from anaf_sync.engine import run_sync
-from anaf_sync.state import SyncState
+from anaf_sync.state import Archive, CatalogEntry
 
 pytestmark = [
     pytest.mark.live,
@@ -112,8 +112,7 @@ async def test_dry_run_reports_without_writing(
 ) -> None:
     """A dry run over the full window reports coherently and writes nothing."""
     config = _config(tmp_path, cif, [Artifact.ZIP])
-    state_path = tmp_path / "state.json"
-    state = SyncState.load(state_path)
+    state = Archive.open(tmp_path / "state.db")  # no retention: read-only intent
 
     report = await run_sync(config, provider, state, dry_run=True)
 
@@ -121,7 +120,8 @@ async def test_dry_run_reports_without_writing(
     assert report.downloaded == 0
     assert report.already_archived == 0  # fresh state
     assert report.would_download + report.skipped_non_invoice == report.listed
-    assert not state_path.exists()  # dry runs must not touch state
+    assert state.count == 0  # dry runs must not record anything
+    assert not state.failures
     assert not config.output.resolved_directory.exists()  # ...or the archive
 
 
@@ -145,10 +145,19 @@ async def test_archives_one_message_end_to_end(
         pytest.skip("no archivable invoice in ANAF's 60-day window")
     assert target.id is not None
 
-    state = SyncState.load(tmp_path / "state.json")
+    state = Archive.open(tmp_path / "state.db")
     for item in items:
         if item.id and item.id != target.id:
-            state.record(item.id, "preseeded", [])
+            # Unique base per id: base_path is UNIQUE in the catalog now.
+            state.record(
+                CatalogEntry(
+                    message_id=item.id,
+                    cif=cif,
+                    direction=direction_of(item) or "received",
+                    base_path=f"preseeded/{item.id}",
+                    artifacts=[],
+                )
+            )
 
     config = _config(tmp_path, cif, list(Artifact))
     report = await run_sync(config, provider, state)
@@ -157,7 +166,7 @@ async def test_archives_one_message_end_to_end(
     # A message indexed between our listing and the engine's would bump this;
     # lista indexing lags filing by minutes, so the race is negligible.
     assert report.downloaded == 1
-    assert state.is_downloaded(target.id)
+    assert state.is_archived(target.id)
 
     root = config.output.resolved_directory
     zips = list(root.rglob("*.zip"))

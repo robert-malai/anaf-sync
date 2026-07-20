@@ -1,11 +1,13 @@
 """Single-instance lock so overlapping scheduled runs cannot race.
 
-A slow pass (large window, rate-limit backoff) can outlive the interval to
-the next scheduled run; two concurrent passes would download the same
-messages twice and overwrite each other's ``state.json``. ``filelock``
-wraps the OS advisory lock (``flock`` / ``msvcrt.locking``), so it is
-released automatically however the process dies — no stale-pidfile
-handling needed.
+A slow pass (large window, rate-limit backoff) can outlive the interval to the
+next scheduled run. Two concurrent passes would both write the same artifact
+files to the same rendered paths — interleaving on disk, since those writes do
+not go through the archive DB — burn ANAF's daily call quota on duplicate
+downloads, and contend on the DB itself. The archive's per-transaction commits
+cannot serialize a whole run; this lock does, wrapping the OS advisory lock
+(``flock`` / ``msvcrt.locking``) via ``filelock`` so it releases automatically
+however the process dies — no stale-pidfile handling needed.
 """
 
 from __future__ import annotations
