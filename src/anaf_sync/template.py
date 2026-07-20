@@ -4,6 +4,11 @@ The template language is Python's ``str.format`` mini-language: ``{number}``,
 ``{issue_date:%Y-%m}``, etc. Literal ``/`` in the template creates directories;
 every *substituted* value is sanitised so a rogue invoice number can never
 escape the output root or produce a name Windows refuses.
+
+Beyond Python's standard ``!s``/``!r``/``!a`` conversions, four case
+conversions are available on any variable: ``{issue_month!u}`` → ``IULIE``,
+``{issue_month!l}`` → ``iulie``, ``{issue_month!c}`` → ``Iulie``, and
+``{partner_name!t}`` → ``Furnizor Srl`` (per-word Title Case).
 """
 
 from __future__ import annotations
@@ -22,6 +27,14 @@ _ILLEGAL_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _TRAILING_JUNK = re.compile(r"[. ]+$")
 
 _PLACEHOLDER = "unknown"
+
+#: ``{var!x}`` case conversions; applied before sanitisation, ``None``-safe.
+_CASE_CONVERSIONS: dict[str, Any] = {
+    "u": str.upper,
+    "l": str.lower,
+    "c": str.capitalize,
+    "t": str.title,
+}
 
 
 class TemplateError(ValueError):
@@ -52,6 +65,18 @@ class _ContextFormatter(string.Formatter):
                 f"unknown template variable {{{key}}} — available: {available}"
             )
         return self._context[key]
+
+    def convert_field(self, value: Any, conversion: str | None) -> Any:  # noqa: ANN401
+        if conversion in (None, "s", "r", "a"):
+            return super().convert_field(value, conversion)
+        if convert := _CASE_CONVERSIONS.get(conversion):
+            # None stays None so format_field still renders the placeholder.
+            return convert(str(value)) if value is not None else None
+        raise TemplateError(
+            f"unknown conversion {{!{conversion}}} — available: !u (CAPS), "
+            "!l (small), !c (Capitalised), !t (Title Case), plus Python's "
+            "!s/!r/!a"
+        )
 
     def format_field(self, value: Any, format_spec: str) -> str:  # noqa: ANN401
         if value is None:

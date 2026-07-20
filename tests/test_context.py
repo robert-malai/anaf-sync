@@ -36,6 +36,8 @@ def test_context_without_a_parsed_view_falls_back_to_the_listing() -> None:
     assert context["direction"] == "received"
     assert context["cif"] == "111"
     assert context["created"] == dt.datetime(2026, 7, 18, 14, 30)
+    assert context["created_month"] == "iulie"
+    assert context["issue_month"] is None  # no parsed view → no issue date
     # CIFs extracted by anafpy from the `detalii` prose.
     assert context["seller_cif"] == "222"
     assert context["buyer_cif"] == "111"
@@ -55,6 +57,7 @@ def test_context_with_a_parsed_view() -> None:
     context = build_context(_item(), view, cif="111")
     assert context["number"] == "FCT-100"
     assert context["issue_date"] == dt.date(2026, 7, 1)
+    assert context["issue_month"] == "iulie"
     assert context["kind"] == "invoice"
     assert context["seller_name"] == "Furnizor SRL"
     assert context["seller_cif"] == "222"

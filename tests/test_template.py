@@ -20,6 +20,30 @@ def test_date_format_specs() -> None:
     assert result == PurePosixPath("2026/07/2026-07-03")
 
 
+def test_case_conversions() -> None:
+    template = PathTemplate("{m!u}/{m!c}/{m!l}/{m}")
+    result = template.render({"m": "iulie"})
+    assert result == PurePosixPath("IULIE/Iulie/iulie/iulie")
+
+
+def test_title_case_conversion() -> None:
+    template = PathTemplate("{partner_name!t}")
+    result = template.render({"partner_name": "FURNIZOR de PANIFICAȚIE srl"})
+    assert result == PurePosixPath("Furnizor De Panificație Srl")
+
+
+def test_case_conversion_of_none_renders_as_unknown() -> None:
+    template = PathTemplate("{issue_month!u}")
+    result = template.render({"issue_month": None})
+    assert result == PurePosixPath("unknown")
+
+
+def test_unknown_conversion_is_rejected() -> None:
+    template = PathTemplate("{m!x}")
+    with pytest.raises(TemplateError, match="unknown conversion"):
+        template.render({"m": "iulie"})
+
+
 def test_unknown_variable_lists_available() -> None:
     template = PathTemplate("{nope}")
     with pytest.raises(TemplateError, match="unknown template variable"):

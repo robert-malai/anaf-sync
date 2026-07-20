@@ -19,6 +19,29 @@ __all__ = ["Direction", "build_context", "direction_of"]
 
 Direction = str  # "received" | "sent" | None — narrow alias for readability
 
+#: Romanian month names (lowercase, as the language convention dictates).
+#: Deliberately hardcoded — ``%B`` depends on the process locale, which would
+#: make archive paths differ between machines. All names are ASCII, so they
+#: pass path sanitisation untouched. Case is the template's job (``!u``/``!c``).
+_RO_MONTHS = (
+    "ianuarie",
+    "februarie",
+    "martie",
+    "aprilie",
+    "mai",
+    "iunie",
+    "iulie",
+    "august",
+    "septembrie",
+    "octombrie",
+    "noiembrie",
+    "decembrie",
+)
+
+
+def _ro_month(value: dt.date | dt.datetime | None) -> str | None:
+    return _RO_MONTHS[value.month - 1] if value is not None else None
+
 
 def direction_of(item: MessageListItem) -> Direction | None:
     """Classify a message as received/sent from ANAF's ``tip`` field."""
@@ -107,15 +130,18 @@ def build_context(
         # Received — and the safe default when the type is unrecognised.
         partner_name, partner_cif = seller_name, seller_cif
 
+    created = _parse_created(item.created_at)
     return {
         "message_id": item.id,
         "request_id": item.request_id,
         "message_type": item.message_type,
-        "created": _parse_created(item.created_at),
+        "created": created,
+        "created_month": _ro_month(created),
         "cif": _digits(cif) or cif,
         "direction": direction,
         "number": number,
         "issue_date": issue_date,
+        "issue_month": _ro_month(issue_date),
         "due_date": due_date,
         "currency": currency,
         "total": total,
