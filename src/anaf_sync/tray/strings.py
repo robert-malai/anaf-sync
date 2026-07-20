@@ -158,3 +158,88 @@ def failing_alert(count: int, partner: str | None, days_left: int) -> str:
 def generic_error_alert() -> str:
     """Red row when the last run broke for a non-auth reason (crash / stale)."""
     return "Ultima sincronizare a eșuat — verificați jurnalul aplicației"
+
+
+# -- Main window (handoff §2) -------------------------------------------------
+
+WINDOW_TITLE = "anaf-sync"
+SIDEBAR_INVOICES = "Facturi"
+SIDEBAR_SETTINGS = "Setări"
+
+SEARCH_PLACEHOLDER = "Caută după număr sau partener…"
+
+FILTER_ALL = "Toate"
+FILTER_RECEIVED = "Primite"
+FILTER_SENT = "Trimise"
+FILTER_PROBLEMS = "Probleme"
+
+PERIOD_LABEL = "Perioadă"
+PERIOD_CURRENT = "Luna curentă"
+PERIOD_ALL = "Toate"
+PERIOD_CUSTOM = "Personalizat…"
+
+# Table columns (uppercased by the header delegate/stylesheet, stored as-is).
+COL_DATE = "Data"
+COL_NUMBER = "Număr"
+COL_PARTNER = "Partener"
+COL_DIRECTION = "Direcție"
+COL_TOTAL = "Total"
+
+# Direction pills.
+PILL_RECEIVED = "primită"
+PILL_SENT = "trimisă"
+PILL_FAILED = "eșuată"
+
+# Details pane — key-fact labels.
+DETAIL_PARTNER = "Partener"
+DETAIL_PARTNER_CIF = "CIF partener"
+DETAIL_ISSUE_DATE = "Data emiterii"
+DETAIL_SPV_DATE = "Încărcată în SPV"
+DETAIL_TOTAL = "Total"
+DETAIL_FILES = "Fișiere pe disc"
+DETAIL_PATH = "Cale în arhivă"
+BTN_OPEN_PDF = "Deschide PDF"
+BTN_REVEAL = "Arată în dosar"
+BTN_RETRY = "Reîncearcă acum"
+TOOLTIP_FILE_MISSING = "fișierul nu a fost găsit pe disc"
+
+# Provenance block.
+DETAIL_MESSAGE_ID = "message_id"
+DETAIL_MESSAGE_TYPE = "tip mesaj"
+DETAIL_ARCHIVED_AT = "arhivat la"
+
+# Delayed / failing detail panels.
+DELAYED_TITLE = "Declarată cu întârziere"
+FAILING_TITLE = "Descărcarea eșuează repetat"
+FAILING_LAST_ERROR = "Ultima eroare:"
+DETAILS_EMPTY = "Selectați o factură pentru detalii."
+
+
+def problems_chip(count: int) -> str:
+    """``"Probleme"`` / ``"Probleme (1)"`` — suffix the count when non-zero."""
+    return FILTER_PROBLEMS if count == 0 else f"{FILTER_PROBLEMS} ({count})"
+
+
+def footer_text(shown: int, total: int) -> str:
+    """``"12 afișate · 128 în arhivă · lista se încarcă pe măsură ce derulați"``."""
+    return (
+        f"{shown} afișate · {total} în arhivă · "
+        "lista se încarcă pe măsură ce derulați"
+    )
+
+
+def delayed_body(issue: str, spv: str, delay_days: int, threshold_days: int) -> str:
+    """``"Emisă 11 iul. · încărcată în SPV 19 iul. — după 8 zile (limita: 5 zile)"``."""
+    after = _noun(delay_days, "zi", "zile")
+    limit = _noun(threshold_days, "zi", "zile")
+    return f"Emisă {issue} · încărcată în SPV {spv} — după {after} (limita: {limit})"
+
+
+def failing_since(first: str, attempts: int) -> str:
+    """``"Eșuează din 11 iul. · 6 încercări"``."""
+    return f"Eșuează din {first} · {_noun(attempts, 'încercare', 'încercări')}"
+
+
+def spv_expiry_line(days_left: int) -> str:
+    """``"Expiră din SPV în 9 zile"`` (capitalised, for the failing panel)."""
+    return _spv_expiry(days_left).capitalize()

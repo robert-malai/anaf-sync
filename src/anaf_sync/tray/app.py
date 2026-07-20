@@ -42,6 +42,7 @@ from .theme import (
     status_color,
 )
 from .watcher import StateWatcher
+from .window import MainWindow
 
 __all__ = ["TrayApp", "main", "run"]
 
@@ -62,6 +63,7 @@ class TrayApp:
         self._config_path = config_path or default_config_path()
         self._output_dir: Path | None = None
         self._theme: Theme = current_theme()
+        self._window: MainWindow | None = None
 
         self._tray = QSystemTrayIcon()
         self._menu = QMenu()
@@ -97,7 +99,7 @@ class TrayApp:
         self._menu.addAction(self._sync_action)
 
         self._archived_action = QAction(strings.MENU_ARCHIVED_INVOICES, self._menu)
-        self._archived_action.setEnabled(False)  # opens the window in M2
+        self._archived_action.triggered.connect(self._open_window)
         self._menu.addAction(self._archived_action)
 
         self._folder_action = QAction(strings.MENU_OPEN_FOLDER, self._menu)
@@ -154,6 +156,8 @@ class TrayApp:
         )
         self._output_dir = status.output_dir
         self._apply(status)
+        if self._window is not None and self._window.isVisible():
+            self._window.refresh()
 
     def _apply(self, status: TrayStatus) -> None:
         theme = self._theme
@@ -206,6 +210,20 @@ class TrayApp:
     def _on_theme_changed(self, theme: Theme) -> None:
         self._theme = theme
         self.refresh()
+        if self._window is not None:
+            self._window.apply_theme(theme)
+
+    def _open_window(self) -> None:
+        """Open (or raise) the Facturi window; created lazily, hidden on close."""
+        if self._window is None:
+            self._window = MainWindow(
+                state_path=self._state_path,
+                config_path=self._config_path,
+                on_retry=self._runner.start,
+            )
+        self._window.show()
+        self._window.raise_()
+        self._window.activateWindow()
 
     def _open_folder(self) -> None:
         if self._output_dir is None:
