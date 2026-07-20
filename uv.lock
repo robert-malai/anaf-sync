@@ -34,7 +34,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anafpy", specifier = ">=0.4.0" },
+    { name = "anafpy", specifier = ">=0.4.1" },
     { name = "cyclopts", specifier = ">=3.14" },
     { name = "platformdirs", specifier = ">=4.2" },
     { name = "pydantic", specifier = ">=2.7" },
@@ -57,7 +57,7 @@ dev = [
 
 [[package]]
 name = "anafpy"
-version = "0.4.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
@@ -70,9 +70,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "xsdata-pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/cd/c9bdb296097cba58df7fe770467112133516054831a07b77a0de387d1290/anafpy-0.4.0.tar.gz", hash = "sha256:1c598152e4e9db6aabe731d235527ce2b18d2ee5ce0d7bba15f34cfc2f794897", size = 3857921 }
+sdist = { url = "https://files.pythonhosted.org/packages/83/24/e4e2f1e958132679e614ac169a518d4c6c8bb1ba4d68ef3a7d598e65535a/anafpy-0.4.1.tar.gz", hash = "sha256:92a56e2acf6f7c90de0f774a55bc95dbcdbeb6ca00e843df23e1ac99f458dfea", size = 3878766 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/12/31/d15a7e2323d29fc06b6bbbe6e7de6929209c69f34735a21f1d4f56183108/anafpy-0.4.0-py3-none-any.whl", hash = "sha256:7ff5221fb6396d1468f1e04aa592ef3ae7db8c85036cfde9fe6080c9764aa616", size = 512656 },
+    { url = "https://files.pythonhosted.org/packages/b4/dd/f14405e0402d21ce0f0efa097c4caa9150e3d603f1ba5fd574936d76bd26/anafpy-0.4.1-py3-none-any.whl", hash = "sha256:088fe9163db3c0591beea0bcf53591c6f52202783fa5bc852c4450f505c15492", size = 518958 },
 ]
 
 [[package]]
