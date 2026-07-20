@@ -15,9 +15,12 @@ from typing import Any
 from anafpy.efactura import MessageListItem
 from anafpy.efactura.authoring import InvoiceDocument
 
-__all__ = ["Direction", "build_context", "direction_of"]
+__all__ = ["DirectionLabel", "build_context", "direction_of"]
 
-Direction = str  # "received" | "sent" | None — narrow alias for readability
+#: "received" | "sent" — narrow alias for readability. Deliberately not the
+#: config.Direction enum: that one is the *filter* the user configures (and
+#: includes "both"), this is the classification of a single message.
+DirectionLabel = str
 
 #: Romanian month names (lowercase, as the language convention dictates).
 #: Deliberately hardcoded — ``%B`` depends on the process locale, which would
@@ -43,7 +46,7 @@ def _ro_month(value: dt.date | dt.datetime | None) -> str | None:
     return _RO_MONTHS[value.month - 1] if value is not None else None
 
 
-def direction_of(item: MessageListItem) -> Direction | None:
+def direction_of(item: MessageListItem) -> DirectionLabel | None:
     """Classify a message as received/sent from ANAF's ``tip`` field."""
     kind = (item.message_type or "").casefold()
     if "primita" in kind:
