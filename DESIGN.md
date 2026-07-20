@@ -1,7 +1,8 @@
 # anaf-sync — design
 
 Why this tool is shaped the way it is. Companion to [README.md](README.md)
-(usage) and [CLAUDE.md](CLAUDE.md) (working conventions).
+(the end-user guide, in Romanian), [CONTRIBUTING.md](CONTRIBUTING.md)
+(developer setup), and [CLAUDE.md](CLAUDE.md) (working conventions).
 
 ## 1. Problem and goals
 

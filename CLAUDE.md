@@ -82,3 +82,11 @@ Pydantic v2 for anything structured, `pydantic-settings` for env config,
 Tests use fakes at the `EFacturaClient` seam (`tests/test_engine.py`) and
 `model_construct` to build invoice views without full UBL validation — follow
 those patterns rather than mocking HTTP.
+
+**Documentation languages.** `README.md` is the end-user guide and is written
+in **Romanian** (with proper diacritics) — the audience is Romanian by
+construction, since RO e-Factura only serves Romanian fiscal entities. Keep it
+purely operator-facing (install, ANAF/SPV credentials, config, run, schedule,
+logs). Everything developer-facing — `CONTRIBUTING.md`, `DESIGN.md`, this
+file, code, docstrings, commits, issues — stays in English. Template variable
+names, env vars, and CLI flags are code identifiers: never translate them.
