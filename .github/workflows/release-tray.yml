@@ -1,0 +1,71 @@
+# Build the desktop tray companion into standalone bundles for each OS.
+#
+# Runs the full gates with the `tray` extra (so the PySide6 UI is exercised
+# headless), then freezes the app with PyInstaller and uploads the result. On a
+# version tag the zipped bundles are attached to the GitHub release.
+#
+# Known gap (out of scope): the bundles are UNSIGNED — no macOS notarization,
+# no Windows Authenticode. Operators must use the documented right-click-open
+# workaround until signing lands. Do not recommend these bundles for wide
+# distribution before then.
+name: release-tray
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # attach bundles to the GitHub release on a tag
+
+jobs:
+  bundle:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Qt system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3
+      - name: Sync (with tray extra)
+        run: uv sync --extra tray --group qt
+      - name: Gates
+        run: |
+          uv run pytest -q
+          uv run ruff check src tests
+          uv run black --check src tests
+          uv run mypy src
+      - name: Build bundle
+        run: uv run --with pyinstaller pyinstaller packaging/tray.spec --noconfirm --distpath dist --workpath build_pyi
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: cd dist && zip -r -y "anaf-sync-tray-macos.zip" "anaf-sync-tray.app"
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: cd dist && tar czf "anaf-sync-tray-linux.tar.gz" "anaf-sync-tray"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/anaf-sync-tray -DestinationPath dist/anaf-sync-tray-windows.zip
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anaf-sync-tray-${{ runner.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.tar.gz

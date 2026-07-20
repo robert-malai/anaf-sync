@@ -160,6 +160,42 @@ Task Scheduler pe Windows, un timer systemd de utilizator pe Linux
 (`loginctl enable-linger $USER` ca să ruleze și fără sesiune deschisă),
 launchd pe macOS. Fără daemon propriu.
 
+## Aplicația din bara de sistem (opțional)
+
+Un companion desktop discret afișează starea arhivei printr-o iconiță în bara
+de sistem, ca să vezi din timp când o sincronizare se strică — înainte ca ANAF
+să șteargă mesajele după 60 de zile. Culoarea punctului de stare înseamnă:
+
+- **verde** — arhiva este la zi;
+- **galben** — necesită atenție: o factură eșuează repetat sau a fost declarată
+  cu întârziere;
+- **roșu** — sincronizarea nu funcționează (de obicei autentificarea ANAF a
+  expirat — rulează `anafpy auth login`).
+
+Din meniu poți porni o sincronizare, deschide dosarul arhivei, răsfoi facturile
+arhivate și edita configurația — fără să atingi `config.toml` manual (deși
+rămâne editabil manual oricând). Aplicația doar citește arhiva și scrie
+`config.toml`; orice descărcare o face tot `anaf-sync sync`.
+
+Instalare (adaugă dependențele grafice PySide6):
+
+```bash
+pip install "anaf-sync[tray]"
+anaf-sync-tray                 # pornește aplicația
+anaf-sync tray install         # pornire automată la logare (idempotent)
+anaf-sync tray status
+anaf-sync tray remove
+```
+
+Alternativ, descarcă un pachet gata compilat de la secțiunea Releases (nu
+necesită Python). Pachetele nu sunt semnate deocamdată, așa că la prima
+pornire sistemul afișează un avertisment: pe macOS deschide-l cu click‑dreapta
+→ „Open" o singură dată; pe Windows alege „More info" → „Run anyway".
+
+Pe Linux/GNOME iconițele din bară au nevoie de extensia AppIndicator
+(„AppIndicator and KStatusNotifierItem Support"); pe majoritatea celorlalte
+medii desktop funcționează direct.
+
 ## Jurnale
 
 Rulările interactive afișează jurnale lizibile în consolă. Rulările

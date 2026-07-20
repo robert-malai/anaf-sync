@@ -16,6 +16,10 @@ from cyclopts import App, Parameter
 from cyclopts.validators import Number
 
 from . import __version__
+from .autostart import AutostartError
+from .autostart import install as autostart_install
+from .autostart import remove as autostart_remove
+from .autostart import status as autostart_status
 from .config import (
     AuthSettings,
     default_config_path,
@@ -53,6 +57,11 @@ schedule_app = App(
     name="schedule", help="Manage the OS-level schedule for `anaf-sync sync`."
 )
 app.command(schedule_app)
+
+tray_app = App(
+    name="tray", help="Manage login-time autostart for the desktop tray companion."
+)
+app.command(tray_app)
 
 ConfigOption = Annotated[
     Path | None,
@@ -385,6 +394,35 @@ def schedule_remove_cmd() -> int:
 def schedule_status_cmd() -> int:
     """Show whether the scheduled job is installed."""
     print(schedule_status())
+    return 0
+
+
+@tray_app.command(name="install")
+def tray_install_cmd() -> int:
+    """Enable the desktop tray companion at login (idempotent)."""
+    try:
+        print(autostart_install())
+    except AutostartError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+@tray_app.command(name="remove")
+def tray_remove_cmd() -> int:
+    """Disable tray autostart."""
+    try:
+        print(autostart_remove())
+    except AutostartError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+@tray_app.command(name="status")
+def tray_status_cmd() -> int:
+    """Show whether tray autostart is enabled."""
+    print(autostart_status())
     return 0
 
 

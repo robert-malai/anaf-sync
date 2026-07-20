@@ -316,3 +316,25 @@ free-entry field — a documented deviation to revisit if anafpy grows such an
 API. Changing the schedule frequency re-installs through `scheduling.py`'s own
 functions; the tray never shells out to `schtasks`/`systemctl`/`launchctl`
 itself.
+
+**Autostart is the platform's job too** (`autostart.py`, mirroring §7's stance
+on scheduling): a macOS LaunchAgent (`RunAtLoad`, `ProcessType Interactive`, no
+`KeepAlive` — a tray the user quits should stay quit), a Windows `HKCU\…\Run`
+value, and an XDG `~/.config/autostart/*.desktop` entry, driven by
+`anaf-sync tray install|remove|status`. The payload builders are pure functions
+returning the plist dict / desktop text / registry string, so the format is
+unit-tested without touching the real system; only install/remove/status make
+the platform calls. The launched command is resolved exactly as `scheduling.py`
+resolves `anaf-sync` — the console script, or `sys.executable` when frozen — so
+autostart works from a venv install and from a bundle alike.
+
+**Bundling** (`packaging/tray.spec`, one PyInstaller spec with platform
+conditionals) freezes the app into a menu-bar-only macOS `.app` (`LSUIElement`,
+so no Dock icon), a windowed Windows exe, and a Linux one-dir binary, excluding
+the Qt modules the tray never touches to keep the size down. `release-tray.yml`
+runs the full gates with the `tray` extra (the PySide6 code exercised headless
+via `QT_QPA_PLATFORM=offscreen`) before building on each OS. Code signing and
+notarization are deliberately out of scope for now — the bundles are unsigned
+and trigger the usual first-run OS warnings, documented in the README with the
+right-click-open workaround; signing is follow-up work before the bundles are
+recommended for wide distribution.

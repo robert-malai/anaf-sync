@@ -121,6 +121,27 @@ async def test_dry_run_records_nothing(
     assert _last_run(tmp_path) is None
 
 
+def test_tray_status_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "autostart_status", lambda: "not enabled")
+    assert cli.tray_status_cmd() == 0
+    assert "not enabled" in capsys.readouterr().out
+
+
+def test_tray_install_reports_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from anaf_sync.autostart import AutostartError
+
+    def boom() -> str:
+        raise AutostartError("cannot locate the `anaf-sync-tray` executable")
+
+    monkeypatch.setattr(cli, "autostart_install", boom)
+    assert cli.tray_install_cmd() == 1
+    assert "anaf-sync-tray" in capsys.readouterr().err
+
+
 def test_log_crash_records_crashed_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
