@@ -126,9 +126,13 @@ template serves both received and sent archives. Party CIFs prefer the
 invoice's own VAT fields and fall back to what anafpy extracts from the
 listing's `detalii` prose (ANAF never sends them as structured fields).
 
-A base path collision with an *existing different* file gets a `_{message_id}`
-suffix rather than clobbering — two invoices may legitimately render the same
-name.
+Base path collisions are resolved against the state file, which doubles as
+the registry of which message owns which path: a base recorded for a
+*different* message gets a `_{message_id}` suffix (two invoices may
+legitimately render the same name), while an unowned base is claimed and
+overwritten in place — deliberately, so `--redownload` refreshes files where
+they are and leftovers from a run that crashed before recording are healed
+rather than duplicated.
 
 ## 5. Artifacts
 

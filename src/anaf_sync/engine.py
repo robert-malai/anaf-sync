@@ -20,8 +20,9 @@ from anafpy.efactura import (
     Filter,
     MessageListItem,
 )
+from anafpy.efactura.authoring import DocumentKind, InvoiceDocument
 from anafpy.exceptions import AnafError, AnafRateLimitError, AnafTransportError
-from anafpy.public import PublicClient
+from anafpy.public import PublicClient, TransformStandard
 from pydantic import BaseModel, Field
 from tenacity import (
     AsyncRetrying,
@@ -52,6 +53,7 @@ class SyncReport(BaseModel):
     listed: int = 0
     already_archived: int = 0
     skipped_non_invoice: int = 0
+    missing_id: int = 0  # listed without an id — nothing actionable, not a failure
     downloaded: int = 0
     would_download: int = 0  # dry-run only
     failures: list[tuple[str, str]] = Field(default_factory=list)  # (id, error)
@@ -135,7 +137,9 @@ async def _sync_cif(
     for item in items:
         message_id = item.id
         if message_id is None:
-            report.failures.append(("?", "message with no id in listing"))
+            # Nothing to download and nothing the user can do about it.
+            log.warning("message_without_id", type=item.message_type)
+            report.missing_id += 1
             continue
         if direction_of(item) is None:
             # Error notices and buyer messages carry no invoice to archive.
@@ -154,8 +158,8 @@ async def _sync_cif(
             )
             continue
         try:
-            base = await _archive_message(
-                client, public, config, template, item, cif=cif
+            base, written = await _archive_message(
+                client, public, config, state, template, item, cif=cif
             )
         except AnafError as exc:
             log.error("download_failed", message_id=message_id, error=str(exc))
@@ -163,9 +167,9 @@ async def _sync_cif(
             state.record_failure(message_id, str(exc))  # visibility only, no gate
             continue
         # record() persists atomically: a crash never redoes or loses work.
-        state.record(message_id, str(base), [a.value for a in config.output.artifacts])
+        state.record(message_id, str(base), written)
         report.downloaded += 1
-        log.info("archived", message_id=message_id, path=str(base))
+        log.info("archived", message_id=message_id, path=str(base), artifacts=written)
 
 
 async def _download_with_retry(
@@ -188,30 +192,46 @@ async def _archive_message(
     client: EFacturaClient,
     public: PublicClient | None,
     config: SyncConfig,
+    state: SyncState,
     template: PathTemplate,
     item: MessageListItem,
     *,
     cif: str,
-) -> Path:
-    """Download one message and write its artifacts; returns the base path."""
+) -> tuple[Path, list[str]]:
+    """Download one message and write its artifacts.
+
+    Returns the base path and the artifact values actually written — the
+    state record must describe what is on disk, not what was configured.
+    """
     assert item.id is not None
     message = await _download_with_retry(client, item.id)
     context = build_context(item, message.view, cif=cif)
-    base = _unique_base(
+    base = _claim_base(
+        state,
         config.output.resolved_directory / Path(template.render(context)),
         item.id,
     )
     base.parent.mkdir(parents=True, exist_ok=True)
 
+    written = []
     for artifact in config.output.artifacts:
-        await _write_artifact(artifact, base, message, item, context, public)
-    return base
+        path = await _write_artifact(artifact, base, message, item, context, public)
+        if path is not None:
+            written.append(artifact.value)
+    return base, written
 
 
-def _unique_base(base: Path, message_id: str) -> Path:
-    """Avoid clobbering a different invoice that rendered the same path."""
-    probes = [base.with_suffix(ext) for ext in (".zip", ".xml", ".pdf", ".json")]
-    if any(p.exists() for p in probes):
+def _claim_base(state: SyncState, base: Path, message_id: str) -> Path:
+    """Avoid clobbering a different invoice that rendered the same path.
+
+    The state file is the registry of ownership: a base recorded for another
+    message gets an id suffix; anything else — including this message's own
+    prior path on ``--redownload``, and leftovers from a run that crashed
+    before recording — is claimed as-is and overwritten in place, never
+    duplicated.
+    """
+    owner = state.owner_of(str(base))
+    if owner is not None and owner != message_id:
         return base.with_name(f"{base.name}_{message_id}")
     return base
 
@@ -261,6 +281,13 @@ async def _write_artifact(
     raise AssertionError(f"unhandled artifact {artifact}")  # pragma: no cover
 
 
+def _transform_standard(view: InvoiceDocument | None) -> TransformStandard:
+    """Transformare rejects a credit note posted under the invoice standard."""
+    if view is not None and view.kind is DocumentKind.CREDIT_NOTE:
+        return TransformStandard.CREDIT_NOTE
+    return TransformStandard.INVOICE
+
+
 async def _write_pdf(
     base: Path,
     message: DownloadedMessage,
@@ -271,7 +298,11 @@ async def _write_pdf(
     if public is None or message.content_xml is None:
         return None
     # The document already passed validation at filing; skip re-validation.
-    body = await public.render_invoice_pdf(message.content_xml, validate=False)
+    body = await public.render_invoice_pdf(
+        message.content_xml,
+        standard=_transform_standard(message.view),
+        validate=False,
+    )
     if not body.startswith(b"%PDF"):
         logger.warning("pdf_render_failed", message_id=item.id, body=body[:120])
         return None
