@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+body{margin:0;background:#dfe4ea;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+a{color:#33658A;}a:hover{color:#264d69;}
+[data-theme="light"]{--desk:#dfe4ea;--win:#f4f6f8;--panel:#ffffff;--border:#d8dee6;--border2:#c4ccd6;--text:#1c2733;--muted:#5b6b7c;--faint:#8494a5;--accent:#33658A;--accent-soft:#e3ecf3;--on-accent:#ffffff;--hover:#eef2f6;--sel:#dfe9f1;--green:#2E7D46;--green-bg:#e4f1e9;--amber:#B3640F;--amber-bg:#f8eedd;--red:#B3312D;--red-bg:#f8e8e7;--mono-bg:#eef1f5;--shadow:0 14px 36px rgba(12,24,36,.16);}
+[data-theme="dark"]{--desk:#14181d;--win:#1b2128;--panel:#232a33;--border:#323c48;--border2:#3d4855;--text:#e4e9ef;--muted:#95a3b3;--faint:#6d7c8c;--accent:#5f92bd;--accent-soft:#28394a;--on-accent:#0f1a24;--hover:#28303a;--sel:#2c3b4a;--green:#5cb87f;--green-bg:#20332a;--amber:#d99b4e;--amber-bg:#39301f;--red:#e07672;--red-bg:#3c2624;--mono-bg:#1d242c;--shadow:0 14px 36px rgba(0,0,0,.45);}
+</style>
+</helmet>
+<div data-theme="{{theme}}" style="min-height:100vh;background:var(--desk);color:var(--text);padding:48px 56px;display:flex;flex-direction:column;gap:64px;font-size:13px">
+
+<section id="1a" style="display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;align-items:center;gap:10px"><a href="#1a" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1a</a><span style="color:var(--muted);font-size:12px">Meniu tray — trei stări</span></div>
+  <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start">
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:flex-end;gap:6px;padding-left:14px">
+        <div style="position:relative;width:30px;height:30px;border-radius:7px;background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center">
+          <div style="width:13px;height:16px;border:1.5px solid var(--muted);border-radius:2px;display:flex;flex-direction:column;gap:2px;justify-content:center;padding:0 2px"><div style="height:1.5px;background:var(--muted)"></div><div style="height:1.5px;background:var(--muted)"></div><div style="height:1.5px;background:var(--muted);width:60%"></div></div>
+          <span style="position:absolute;right:-2px;bottom:-2px;width:9px;height:9px;border-radius:50%;background:var(--green);border:2px solid var(--desk)"></span>
+        </div>
+      </div>
+      <div style="width:300px;background:var(--panel);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:6px">
+        <div style="display:flex;gap:9px;padding:8px 10px 9px">
+          <span style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--green);margin-top:4px"></span>
+          <div><div style="font-weight:600">Arhiva este la zi</div><div style="color:var(--muted);font-size:12px;margin-top:2px">Ultima sincronizare: acum 2 ore · 3 facturi noi</div></div>
+        </div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Sincronizează acum</div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default;display:flex;justify-content:space-between" style-hover="background:var(--accent);color:var(--on-accent)"><span>Facturi arhivate…</span><span style="opacity:.55;font-variant-numeric:tabular-nums">128</span></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Deschide dosarul arhivei</div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Setări…</div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Ieșire</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:flex-end;gap:6px;padding-left:14px">
+        <div style="position:relative;width:30px;height:30px;border-radius:7px;background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center">
+          <div style="width:13px;height:16px;border:1.5px solid var(--muted);border-radius:2px;display:flex;flex-direction:column;gap:2px;justify-content:center;padding:0 2px"><div style="height:1.5px;background:var(--muted)"></div><div style="height:1.5px;background:var(--muted)"></div><div style="height:1.5px;background:var(--muted);width:60%"></div></div>
+          <span style="position:absolute;right:-2px;bottom:-2px;width:9px;height:9px;border-radius:50%;background:var(--amber);border:2px solid var(--desk)"></span>
+        </div>
+      </div>
+      <div style="width:300px;background:var(--panel);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:6px">
+        <div style="display:flex;gap:9px;padding:8px 10px 7px">
+          <span style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--amber);margin-top:4px"></span>
+          <div><div style="font-weight:600">Necesită atenție</div><div style="color:var(--muted);font-size:12px;margin-top:2px">Ultima sincronizare: acum 2 ore</div></div>
+        </div>
+        <div style="margin:2px 6px 6px;padding:8px 10px;border-radius:6px;background:var(--amber-bg);color:var(--amber);font-size:12px;line-height:1.5">1 factură eșuează repetat — <strong>TERMOENERGIA S.R.L.</strong> — expiră din SPV în <strong>9 zile</strong></div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Sincronizează acum</div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default;display:flex;justify-content:space-between" style-hover="background:var(--accent);color:var(--on-accent)"><span>Facturi arhivate…</span><span style="opacity:.55;font-variant-numeric:tabular-nums">128</span></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Deschide dosarul arhivei</div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Setări…</div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Ieșire</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:flex-end;gap:6px;padding-left:14px">
+        <div style="position:relative;width:30px;height:30px;border-radius:7px;background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center">
+          <div style="width:13px;height:16px;border:1.5px solid var(--muted);border-radius:2px;display:flex;flex-direction:column;gap:2px;justify-content:center;padding:0 2px"><div style="height:1.5px;background:var(--muted)"></div><div style="height:1.5px;background:var(--muted)"></div><div style="height:1.5px;background:var(--muted);width:60%"></div></div>
+          <span style="position:absolute;right:-2px;bottom:-2px;width:9px;height:9px;border-radius:50%;background:var(--red);border:2px solid var(--desk)"></span>
+        </div>
+      </div>
+      <div style="width:300px;background:var(--panel);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:6px">
+        <div style="display:flex;gap:9px;padding:8px 10px 7px">
+          <span style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--red);margin-top:4px"></span>
+          <div><div style="font-weight:600">Sincronizarea nu funcționează</div><div style="color:var(--muted);font-size:12px;margin-top:2px">Ultima sincronizare reușită: ieri, 14:32</div></div>
+        </div>
+        <div style="margin:2px 6px 6px;padding:8px 10px;border-radius:6px;background:var(--red-bg);color:var(--red);font-size:12px;line-height:1.5">Autentificarea ANAF a expirat — rulați <code style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--mono-bg);border:1px solid var(--border);border-radius:3px;padding:1px 4px;color:var(--text)">anafpy auth login</code></div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Sincronizează acum</div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default;display:flex;justify-content:space-between" style-hover="background:var(--accent);color:var(--on-accent)"><span>Facturi arhivate…</span><span style="opacity:.55;font-variant-numeric:tabular-nums">128</span></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Deschide dosarul arhivei</div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Setări…</div>
+        <div style="height:1px;background:var(--border);margin:4px 6px"></div>
+        <div style="padding:6px 10px;border-radius:5px;cursor:default" style-hover="background:var(--accent);color:var(--on-accent)">Ieșire</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="1b" style="display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;align-items:center;gap:10px"><a href="#1b" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1b</a><span style="color:var(--muted);font-size:12px">Fereastra principală — Facturi (rândurile și filtrele sunt clicabile)</span></div>
+  <div data-screen-label="Facturi" style="width:980px;height:620px;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
+    <div style="flex:none;height:38px;display:flex;align-items:center;padding:0 14px;gap:7px;border-bottom:1px solid var(--border);background:var(--panel)">
+      <span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span>
+      <span style="flex:1;text-align:center;font-size:12px;color:var(--muted);font-weight:500">anaf-sync</span>
+      <span style="width:53px"></span>
+    </div>
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:none;width:148px;border-right:1px solid var(--border);padding:12px 8px;display:flex;flex-direction:column;gap:2px;background:var(--win)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:6px;background:var(--accent-soft);color:var(--accent);font-weight:600">Facturi<span style="font-size:11px;font-weight:600;background:var(--accent);color:var(--on-accent);border-radius:9px;padding:1px 7px;font-variant-numeric:tabular-nums">128</span></div>
+        <div style="padding:7px 10px;border-radius:6px;color:var(--muted);cursor:default" style-hover="background:var(--hover)">Setări</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:var(--panel)">
+        <div style="flex:none;display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border)">
+          <div style="flex:1;display:flex;align-items:center;gap:7px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--faint);white-space:nowrap;overflow:hidden"><span style="width:10px;height:10px;border:1.5px solid var(--faint);border-radius:50%;flex:none"></span><span style="overflow:hidden;text-overflow:ellipsis">Caută după număr sau partener…</span></div>
+          <div style="display:flex;gap:4px">
+            <sc-for list="{{chips}}" as="c" hint-placeholder-count="4">
+              <div onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:none;display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border)">
+          <span style="font-size:11px;color:var(--faint);margin-right:3px">Perioadă</span>
+          <sc-for list="{{periods}}" as="p" hint-placeholder-count="4">
+            <div onClick="{{p.pick}}" style="{{p.style}}">{{p.label}}</div>
+          </sc-for>
+          <sc-if value="{{customPeriod}}" hint-placeholder-val="{{ false }}">
+            <div style="position:relative;display:flex;gap:5px;align-items:center;margin-left:4px">
+              <input type="date" value="{{fromDate}}" onChange="{{onFrom}}" onFocus="{{openCal}}" style="font:inherit;font-size:11px;font-variant-numeric:tabular-nums;background:var(--win);border:1px solid var(--border);border-radius:5px;padding:3px 5px;color:var(--text);width:112px;box-sizing:border-box">
+              <span style="color:var(--faint)">–</span>
+              <input type="date" value="{{toDate}}" onChange="{{onTo}}" onFocus="{{openCal}}" style="font:inherit;font-size:11px;font-variant-numeric:tabular-nums;background:var(--win);border:1px solid var(--border);border-radius:5px;padding:3px 5px;color:var(--text);width:112px;box-sizing:border-box">
+              <sc-if value="{{calOpen}}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;top:32px;left:0;z-index:6;background:var(--panel);border:1px solid var(--border2);box-shadow:var(--shadow);width:226px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;background:var(--accent-soft);padding:4px 6px">
+                    <span style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent);cursor:default;border-radius:3px" style-hover="background:var(--hover)">◀</span>
+                    <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:var(--accent)">iulie 2026<span style="font-size:8px">▼</span></span>
+                    <span style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent);cursor:default;border-radius:3px" style-hover="background:var(--hover)">▶</span>
+                  </div>
+                  <div style="padding:5px 8px 8px">
+                    <div style="display:grid;grid-template-columns:repeat(7,30px);border-bottom:1px solid var(--border);padding-bottom:3px;margin-bottom:2px">
+                      <span style="text-align:center;font-size:10.5px;color:var(--muted)">lun.</span><span style="text-align:center;font-size:10.5px;color:var(--muted)">mar.</span><span style="text-align:center;font-size:10.5px;color:var(--muted)">mie.</span><span style="text-align:center;font-size:10.5px;color:var(--muted)">joi</span><span style="text-align:center;font-size:10.5px;color:var(--muted)">vin.</span><span style="text-align:center;font-size:10.5px;color:var(--red)">sâm.</span><span style="text-align:center;font-size:10.5px;color:var(--red)">dum.</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(7,30px)">
+                      <sc-for list="{{calDays}}" as="d" hint-placeholder-count="35">
+                        <div onClick="{{d.pick}}" style="{{d.style}}" style-hover="outline:1px solid var(--accent);outline-offset:-1px">{{d.label}}</div>
+                      </sc-for>
+                    </div>
+                    <div style="margin-top:6px;font-size:10.5px;color:var(--faint)">Clic pe zi de început, apoi pe zi de sfârșit</div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+        <div style="flex:none;display:grid;grid-template-columns:52px 88px 1fr 76px 96px;gap:8px;padding:7px 14px;border-bottom:1px solid var(--border);color:var(--faint);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">
+          <div>Data</div><div>Număr</div><div>Partener</div><div>Direcție</div><div style="text-align:right">Total</div>
+        </div>
+        <div style="flex:1;overflow-y:auto">
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+            <div onClick="{{r.pick}}" style="{{r.style}}" style-hover="background:var(--hover)">
+              <div style="{{r.dataStyle}}">{{r.data}}</div>
+              <div style="font-variant-numeric:tabular-nums">{{r.numar}}</div>
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.partener}}</div>
+              <div><span style="{{r.pill}}">{{r.dir}}</span></div>
+              <div style="text-align:right;font-variant-numeric:tabular-nums">{{r.total}}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;display:flex;justify-content:space-between;padding:6px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--faint)">
+          <span style="font-variant-numeric:tabular-nums">{{countLabel}}</span>
+          <span>lista se încarcă pe măsură ce derulați</span>
+        </div>
+      </div>
+      <div style="flex:none;width:250px;border-left:1px solid var(--border);background:var(--win);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
+        <sc-if value="{{selFailing}}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">TERMOENERGIA S.R.L.</span></div>
+              <div style="margin-top:6px"><span style="font-size:11px;font-weight:600;background:var(--red-bg);color:var(--red);border-radius:9px;padding:2px 8px">eșuată</span></div>
+            </div>
+            <div style="background:var(--red-bg);border:1px solid var(--red);border-radius:7px;padding:11px 12px;color:var(--red);font-size:12px;line-height:1.6">
+              <div style="font-weight:700;margin-bottom:3px">Descărcarea eșuează repetat</div>
+              Eșuează din <strong>11 iul.</strong> · <strong>6 încercări</strong><br>Ultima eroare: <code style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px">HTTP 500</code><br>Expiră din SPV în <strong>9 zile</strong>
+            </div>
+            <button onClick="{{noop}}" style="border:none;background:var(--red);color:#fff;font:inherit;font-weight:600;border-radius:6px;padding:7px 12px;cursor:pointer">Reîncearcă acum</button>
+            <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--faint)">
+              <div style="display:flex;justify-content:space-between"><span>message_id</span><span style="font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted)">3210447810</span></div>
+              <div style="display:flex;justify-content:space-between"><span>tip mesaj</span><span style="font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted)">FACTURA PRIMITA</span></div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{selNormal}}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums">{{sel.numar}}</div>
+              <div style="margin-top:6px"><span style="{{sel.pill}}">{{sel.dir}}</span></div>
+            </div>
+            <sc-if value="{{selLate}}" hint-placeholder-val="{{ false }}">
+              <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:7px;padding:10px 11px;color:var(--amber);font-size:12px;line-height:1.55">
+                <div style="font-weight:700;margin-bottom:2px">Declarată cu întârziere</div>
+                {{selLateText}}
+              </div>
+            </sc-if>
+            <div style="display:flex;flex-direction:column;gap:7px;font-size:12px">
+              <div style="display:flex;justify-content:space-between;gap:8px"><span style="color:var(--faint);flex:none">Partener</span><span style="text-align:right;font-weight:500;min-width:0;overflow-wrap:break-word">{{sel.partener}}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--faint)">CIF partener</span><span style="font-variant-numeric:tabular-nums;font-weight:500">{{sel.cif}}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--faint)">Data emiterii</span><span style="font-variant-numeric:tabular-nums;font-weight:500">{{sel.emisa}}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--faint)">Încărcată în SPV</span><span style="font-variant-numeric:tabular-nums;font-weight:500">{{sel.incarcata}}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--faint)">Total</span><span style="font-variant-numeric:tabular-nums;font-weight:600">{{sel.total}}</span></div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--faint);margin-bottom:5px">Fișiere pe disc</div>
+              <div style="display:flex;gap:5px">
+                <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--mono-bg);border:1px solid var(--border);border-radius:4px;padding:2px 7px">.zip</span>
+                <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--mono-bg);border:1px solid var(--border);border-radius:4px;padding:2px 7px">.pdf</span>
+              </div>
+            </div>
+            <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;line-height:1.5;background:var(--mono-bg);border:1px solid var(--border);border-radius:6px;padding:8px 9px;color:var(--muted);word-break:break-all">{{sel.path}}</div>
+            <div style="display:flex;gap:6px">
+              <button onClick="{{noop}}" style="flex:1;border:none;background:var(--accent);color:var(--on-accent);font:inherit;font-size:12px;font-weight:600;border-radius:6px;padding:7px 0;cursor:pointer">Deschide PDF</button>
+              <button onClick="{{noop}}" style="flex:1;border:1px solid var(--border2);background:var(--panel);color:var(--text);font:inherit;font-size:12px;font-weight:500;border-radius:6px;padding:7px 0;cursor:pointer">Arată în dosar</button>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--faint)">
+              <div style="display:flex;justify-content:space-between"><span>message_id</span><span style="font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted)">{{sel.msg}}</span></div>
+              <div style="display:flex;justify-content:space-between"><span>tip mesaj</span><span style="font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted)">{{sel.tip}}</span></div>
+              <div style="display:flex;justify-content:space-between"><span>arhivat la</span><span style="font-variant-numeric:tabular-nums;color:var(--muted)">{{sel.arhivat}}</span></div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="1c" style="display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;align-items:center;gap:10px"><a href="#1c" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1c</a><span style="color:var(--muted);font-size:12px">Fereastra principală — Setări (șablonul e editabil: scrieți o variabilă greșită pentru starea de eroare)</span></div>
+  <div data-screen-label="Setări" style="width:980px;height:620px;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
+    <div style="flex:none;height:38px;display:flex;align-items:center;padding:0 14px;gap:7px;border-bottom:1px solid var(--border);background:var(--panel)">
+      <span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span>
+      <span style="flex:1;text-align:center;font-size:12px;color:var(--muted);font-weight:500">anaf-sync</span>
+      <span style="width:53px"></span>
+    </div>
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:none;width:148px;border-right:1px solid var(--border);padding:12px 8px;display:flex;flex-direction:column;gap:2px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:6px;color:var(--muted);cursor:default" style-hover="background:var(--hover)">Facturi<span style="font-size:11px;font-weight:600;background:var(--mono-bg);color:var(--muted);border-radius:9px;padding:1px 7px;font-variant-numeric:tabular-nums">128</span></div>
+        <div style="padding:7px 10px;border-radius:6px;background:var(--accent-soft);color:var(--accent);font-weight:600">Setări</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:var(--panel)">
+        <div style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:24px">
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">Companie</div>
+            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 16px;align-items:center">
+              <div style="color:var(--muted);align-self:start;padding-top:5px">CIF-uri urmărite</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <sc-for list="{{cifs}}" as="c" hint-placeholder-count="3">
+                    <div onClick="{{c.pick}}" style="{{c.style}}"><span style="{{c.box}}">{{c.mark}}</span>{{c.cif}}</div>
+                  </sc-for>
+                </div>
+                <div style="font-size:11.5px;color:var(--faint)">Lista provine din autentificarea ANAF — cel puțin un CIF rămâne selectat.</div>
+              </div>
+              <div style="color:var(--muted)">Direcție</div>
+              <div style="display:flex;gap:16px">
+                <sc-for list="{{dirOpts}}" as="d" hint-placeholder-count="3">
+                  <div onClick="{{d.pick}}" style="display:flex;align-items:center;gap:7px;cursor:pointer">
+                    <span style="{{d.dot}}"><span style="{{d.dotInner}}"></span></span><span>{{d.label}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="color:var(--muted)">Fereastră de căutare</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <input type="range" min="1" max="60" value="{{lookback}}" onChange="{{onLookback}}" style="flex:1;max-width:280px;accent-color:var(--accent)">
+                  <span style="font-weight:600;font-variant-numeric:tabular-nums;width:56px">{{lookbackLabel}}</span>
+                </div>
+                <div style="font-size:11.5px;color:var(--faint)">ANAF păstrează mesajele cel mult 60 de zile.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="height:1px;background:var(--border)"></div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">Arhivă</div>
+            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 16px;align-items:start">
+              <div style="color:var(--muted);padding-top:5px">Dosar arhivă</div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:5px 10px;flex:1;max-width:340px">~/Facturi</span>
+                <button onClick="{{noop}}" style="border:1px solid var(--border2);background:var(--panel);color:var(--text);font:inherit;font-size:12px;border-radius:6px;padding:5px 12px;cursor:pointer">Alege…</button>
+              </div>
+              <div style="color:var(--muted);padding-top:5px">Șablon de denumire</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <input type="text" value="{{tpl}}" onChange="{{onTpl}}" spellcheck="false" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);width:100%;box-sizing:border-box;outline-color:var(--accent)">
+                <sc-if value="{{tplOk}}" hint-placeholder-val="{{ true }}">
+                  <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;background:var(--green-bg);border:1px solid var(--green);border-radius:6px;padding:7px 10px;color:var(--green);word-break:break-all"><span style="opacity:.65">Previzualizare: </span>{{tplPreview}}</div>
+                </sc-if>
+                <sc-if value="{{tplBad}}" hint-placeholder-val="{{ false }}">
+                  <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:7px 10px;color:var(--red)">{{tplError}}</div>
+                </sc-if>
+              </div>
+              <div style="color:var(--muted);padding-top:5px">Fișiere salvate</div>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-width:560px">
+                <sc-for list="{{arts}}" as="a" hint-placeholder-count="5">
+                  <div onClick="{{a.pick}}" style="{{a.style}}">
+                    <span style="{{a.box}}">{{a.mark}}</span>
+                    <div><div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;font-weight:600">{{a.name}}</div><div style="font-size:11px;color:var(--faint);margin-top:1px">{{a.desc}}</div></div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="height:1px;background:var(--border)"></div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">Programare</div>
+            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 16px;align-items:center">
+              <div style="color:var(--muted)">Frecvență</div>
+              <div>
+                <select value="{{freq}}" onChange="{{onFreq}}" style="font:inherit;font-size:12.5px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text)">
+                  <option>La fiecare oră</option>
+                  <option>La fiecare 3 ore</option>
+                  <option>La fiecare 6 ore</option>
+                  <option>La fiecare 12 ore</option>
+                  <option>O dată pe zi</option>
+                </select>
+              </div>
+              <div></div>
+              <div style="display:flex;align-items:center;gap:7px;color:var(--green);font-size:12.5px;font-weight:500"><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>Activă — următoarea rulare: marți 21 iul., 06:00</div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:none;display:flex;align-items:center;gap:12px;padding:12px 24px;border-top:1px solid var(--border);background:var(--win)">
+          <div style="flex:1;font-size:11.5px;color:var(--faint)">Modificările se scriu în <code style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--mono-bg);border:1px solid var(--border);border-radius:3px;padding:1px 4px;color:var(--muted)">config.toml</code> — fișierul rămâne editabil manual</div>
+          <button onClick="{{noop}}" style="border:1px solid var(--border2);background:var(--panel);color:var(--text);font:inherit;font-size:12.5px;border-radius:6px;padding:6px 14px;cursor:pointer">Renunță</button>
+          <button onClick="{{noop}}" style="border:none;background:var(--accent);color:var(--on-accent);font:inherit;font-size:12.5px;font-weight:600;border-radius:6px;padding:6px 14px;cursor:pointer">Salvează modificările</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;default&quot;: &quot;light&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Aspect&quot;},
+  &quot;templateError&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Setări — stare șablon&quot;},
+  &quot;delayLimit&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 5, &quot;min&quot;: 1, &quot;max&quot;: 30, &quot;unit&quot;: &quot;zile&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Facturi — prag întârziere&quot;}
+}">
+class Component extends DCLogic {
+  state = { sel: "m1", filter: "Toate", period: "Luna curentă", from: "2026-07-01", to: "2026-07-20", calOpen: false, calPhase: 0, tpl: null, dirOpt: "Primite", lookback: 60,
+    cifs: { "12345678": true, "87654321": true, "40118293": false },
+    arts: { zip: true, pdf: true, xml: false, signature: false, metadata: false },
+    freq: "La fiecare 6 ore" };
+
+  componentDidUpdate(prev) {
+    if (prev.templateError !== this.props.templateError) this.setState({ tpl: null });
+  }
+
+  renderVals() {
+    const GOOD = "{cif}/{direction}/{issue_date:%Y}/{issue_date:%m}/{issue_date:%Y-%m-%d}_{number}_{partner_name}";
+    const BAD = GOOD.replace("{number}", "{numer}");
+    const mono = 'ui-monospace,Menlo,Consolas,monospace';
+    const invoices = [
+      { id: "fail", failing: true, iso: "2026-07-11", data: "11 iul.", numar: "—", partener: "TERMOENERGIA S.R.L.", dir: "eșuată", total: "—" },
+      { id: "m1", iso: "2026-07-18", up: "2026-07-18", data: "18 iul.", numar: "FCT-2107", partener: "ELECTROMONTAJ CARPAȚI S.R.L.", dir: "primită", total: "4.821,50 RON", cif: "14338501", emisa: "18 iul. 2026", incarcata: "18 iul. 2026", msg: "3216489021", tip: "FACTURA PRIMITA", arhivat: "18 iul., 06:04", path: "~/Facturi/12345678/received/2026/07/2026-07-18_FCT-2107_ELECTROMONTAJ CARPAȚI S.R.L." },
+      { id: "m2", iso: "2026-07-17", up: "2026-07-17", data: "17 iul.", numar: "2026-0713", partener: "DISTRIGAZ VEST S.A.", dir: "primită", total: "1.245,00 RON", cif: "11694562", emisa: "17 iul. 2026", incarcata: "17 iul. 2026", msg: "3215877403", tip: "FACTURA PRIMITA", arhivat: "17 iul., 12:02", path: "~/Facturi/12345678/received/2026/07/2026-07-17_2026-0713_DISTRIGAZ VEST S.A." },
+      { id: "m3", iso: "2026-07-15", up: "2026-07-16", data: "15 iul.", numar: "AS-1042", partener: "MOBILA PRODEX S.R.L.", dir: "trimisă", total: "12.400,00 RON", cif: "22518743", emisa: "15 iul. 2026", incarcata: "16 iul. 2026", msg: "3214300158", tip: "FACTURA TRIMISA", arhivat: "15 iul., 18:01", path: "~/Facturi/12345678/sent/2026/07/2026-07-15_AS-1042_MOBILA PRODEX S.R.L." },
+      { id: "m4", iso: "2026-07-11", up: "2026-07-19", data: "11 iul.", numar: "FF-88214", partener: "BIROTICA PLUS S.R.L.", dir: "primită", total: "386,75 RON", cif: "31274865", emisa: "11 iul. 2026", incarcata: "19 iul. 2026", msg: "3212094711", tip: "FACTURA PRIMITA", arhivat: "19 iul., 06:03", path: "~/Facturi/12345678/received/2026/07/2026-07-11_FF-88214_BIROTICA PLUS S.R.L." },
+      { id: "m5", iso: "2026-07-03", up: "2026-07-06", data: "3 iul.", numar: "FCT-1001", partener: "ACME CONSTRUCT S.R.L.", dir: "primită", total: "2.480,00 RON", cif: "18293401", emisa: "3 iul. 2026", incarcata: "6 iul. 2026", msg: "3204118867", tip: "FACTURA PRIMITA", arhivat: "6 iul., 06:02", path: "~/Facturi/12345678/received/2026/07/2026-07-03_FCT-1001_ACME CONSTRUCT S.R.L." },
+    ];
+    const delayLimit = this.props.delayLimit ?? 5;
+    const delayOf = (i) => (i.up && i.iso) ? Math.round((new Date(i.up) - new Date(i.iso)) / 86400000) : 0;
+    const isLate = (i) => !i.failing && delayOf(i) > delayLimit;
+    const pillFor = (dir) => {
+      const base = { fontSize: "11px", fontWeight: 600, borderRadius: "9px", padding: "2px 8px", whiteSpace: "nowrap" };
+      if (dir === "eșuată") return { ...base, background: "var(--red-bg)", color: "var(--red)" };
+      if (dir === "trimisă") return { ...base, background: "var(--mono-bg)", color: "var(--muted)", border: "1px solid var(--border)" };
+      return { ...base, background: "var(--accent-soft)", color: "var(--accent)" };
+    };
+    const isoOf = (i) => i.iso;
+    const period = this.state.period;
+    const range = period === "Luna curentă" ? ["2026-07-01", "2026-07-31"]
+      : period === "Ultimele 3 luni" ? ["2026-04-20", "2026-07-20"]
+      : period === "Personalizat…" ? [this.state.from, this.state.to] : null;
+    const filter = this.state.filter;
+    const visible = invoices.filter((i) => {
+      if (range) { const d = isoOf(i); if (d < range[0] || d > range[1]) return false; }
+      if (filter === "Primite") return i.dir === "primită" || i.failing;
+      if (filter === "Trimise") return i.dir === "trimisă";
+      if (filter.startsWith("Probleme")) return i.failing;
+      return true;
+    });
+    const periodChip = (label) => ({
+      label,
+      pick: () => this.setState({ period: label }),
+      style: {
+        fontSize: "11.5px", padding: "3px 9px", borderRadius: "5px", cursor: "default", whiteSpace: "nowrap",
+        fontWeight: period === label ? 600 : 400,
+        background: period === label ? "var(--accent-soft)" : "transparent",
+        color: period === label ? "var(--accent)" : "var(--muted)",
+        border: period === label ? "1px solid var(--accent)" : "1px solid var(--border)",
+      },
+    });
+    const periods = ["Luna curentă", "Toate", "Personalizat…"].map(periodChip);
+    // Calendar popover (July 2026, Monday-first)
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const firstDow = (new Date(2026, 6, 1).getDay() + 6) % 7;
+    const from = this.state.from, to = this.state.to;
+    const calDays = [];
+    const cellBase = {
+      width: "30px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: "11.5px", fontVariantNumeric: "tabular-nums", cursor: "default",
+    };
+    // QCalendarWidget shows leading/trailing out-of-month days, grayed
+    for (let k = firstDow; k > 0; k--) calDays.push({ label: String(new Date(2026, 6, 1 - k).getDate()), pick: () => {}, style: { ...cellBase, color: "var(--faint)" } });
+    for (let day = 1; day <= 31; day++) {
+      const iso = "2026-07-" + pad2(day);
+      const isEnd = iso === from || iso === to;
+      const inRange = iso > from && iso < to;
+      const weekend = (firstDow + day - 1) % 7 >= 5;
+      calDays.push({
+        label: String(day),
+        pick: () => {
+          if (this.state.calPhase === 0) this.setState({ from: iso, to: iso, calPhase: 1 });
+          else {
+            const a = this.state.from;
+            this.setState(iso >= a ? { to: iso, calPhase: 0, calOpen: false } : { from: iso, to: a, calPhase: 0, calOpen: false });
+          }
+        },
+        style: {
+          ...cellBase,
+          background: isEnd ? "var(--accent)" : inRange ? "var(--accent-soft)" : "transparent",
+          color: isEnd ? "var(--on-accent)" : weekend ? "var(--red)" : "var(--text)",
+          fontWeight: isEnd ? 600 : 400,
+        },
+      });
+    }
+    while (calDays.length % 7 !== 0) calDays.push({ label: String(calDays.length - firstDow - 30), pick: () => {}, style: { ...cellBase, color: "var(--faint)" } });
+    const rows = visible.map((i) => {
+      const selected = this.state.sel === i.id;
+      const late = isLate(i);
+      return {
+        ...i,
+        pill: pillFor(i.dir),
+        pick: () => this.setState({ sel: i.id }),
+        dataStyle: { color: late ? "var(--amber)" : "var(--muted)", fontWeight: late ? 600 : 400, fontVariantNumeric: "tabular-nums" },
+        style: {
+          display: "grid", gridTemplateColumns: "52px 88px 1fr 76px 96px", gap: "8px",
+          alignItems: "center", padding: "9px 14px", cursor: "default", fontSize: "13px",
+          borderBottom: "1px solid var(--border)",
+          background: selected ? "var(--sel)" : "transparent",
+          boxShadow: i.failing ? "inset 3px 0 0 var(--red)" : late ? "inset 3px 0 0 var(--amber)" : "none",
+          color: i.failing ? "var(--red)" : "var(--text)",
+        },
+      };
+    });
+    const chips = ["Toate", "Primite", "Trimise", "Probleme (1)"].map((label) => ({
+      label,
+      pick: () => this.setState({ filter: label }),
+      style: {
+        fontSize: "12px", padding: "5px 11px", borderRadius: "6px", cursor: "default", whiteSpace: "nowrap",
+        fontWeight: filter === label ? 600 : 400,
+        background: filter === label ? "var(--accent)" : "var(--win)",
+        color: filter === label ? "var(--on-accent)" : "var(--muted)",
+        border: filter === label ? "1px solid var(--accent)" : "1px solid var(--border)",
+      },
+    }));
+    const sel = invoices.find((i) => i.id === this.state.sel) || invoices[1];
+    const selWithPill = { ...sel, pill: pillFor(sel.dir) };
+    const selLate = isLate(sel);
+    const selLateText = selLate
+      ? "Emisă " + sel.emisa.replace(" 2026", "") + " · încărcată în SPV " + sel.incarcata.replace(" 2026", "") + " — după " + delayOf(sel) + " zile (limita: " + delayLimit + " zile)"
+      : "";
+
+    // CIF multiselect — the available list is fixed by the ANAF login
+    const cifs = Object.keys(this.state.cifs).map((cif) => {
+      const on = this.state.cifs[cif];
+      const selCount = Object.values(this.state.cifs).filter(Boolean).length;
+      return {
+        cif, mark: on ? "✓" : "",
+        pick: () => { if (on && selCount === 1) return; this.setState((s) => ({ cifs: { ...s.cifs, [cif]: !s.cifs[cif] } })); },
+        style: { display: "flex", alignItems: "center", gap: "7px", fontFamily: mono, fontSize: "12px", fontVariantNumeric: "tabular-nums", borderRadius: "6px", padding: "4px 10px 4px 7px", cursor: "pointer", border: on ? "1px solid var(--accent)" : "1px solid var(--border)", background: on ? "var(--accent-soft)" : "var(--panel)", color: on ? "var(--text)" : "var(--muted)" },
+        box: { flex: "none", width: "13px", height: "13px", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700, border: on ? "1px solid var(--accent)" : "1px solid var(--border2)", background: on ? "var(--accent)" : "var(--panel)", color: "var(--on-accent)" },
+      };
+    });
+    // Settings — direction radios
+    const dirOpts = ["Primite", "Trimise", "Ambele"].map((label) => {
+      const on = this.state.dirOpt === label;
+      return {
+        label,
+        pick: () => this.setState({ dirOpt: label }),
+        dot: { width: "14px", height: "14px", borderRadius: "50%", border: on ? "1px solid var(--accent)" : "1px solid var(--border2)", background: on ? "var(--accent)" : "var(--panel)", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" },
+        dotInner: { width: "5px", height: "5px", borderRadius: "50%", background: on ? "var(--on-accent)" : "transparent" },
+      };
+    });
+
+    // Artifact cards
+    const artDefs = [
+      ["zip", "arhiva semnată originală"], ["pdf", "redarea oficială ANAF"],
+      ["xml", "XML-ul UBL al facturii"], ["signature", "semnătura MF detașată"],
+      ["metadata", "fișier JSON cu detaliile mesajului"],
+    ];
+    const arts = artDefs.map(([name, desc]) => {
+      const on = this.state.arts[name];
+      return {
+        name, desc, mark: on ? "✓" : "",
+        pick: () => this.setState((s) => ({ arts: { ...s.arts, [name]: !s.arts[name] } })),
+        style: { display: "flex", gap: "9px", alignItems: "flex-start", padding: "9px 10px", borderRadius: "7px", cursor: "pointer", border: on ? "1px solid var(--accent)" : "1px solid var(--border)", background: on ? "var(--accent-soft)" : "var(--panel)" },
+        box: { flex: "none", width: "15px", height: "15px", borderRadius: "4px", marginTop: "1px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700, border: on ? "1px solid var(--accent)" : "1px solid var(--border2)", background: on ? "var(--accent)" : "var(--panel)", color: "var(--on-accent)" },
+      };
+    });
+
+    // Template preview
+    const tpl = this.state.tpl ?? (this.props.templateError ? BAD : GOOD);
+    const d = (y, m, day) => ({ y, m, day });
+    const fmtDate = (v, f) => (f || "%Y-%m-%d")
+      .replace(/%Y/g, String(v.y)).replace(/%m/g, String(v.m).padStart(2, "0"))
+      .replace(/%d/g, String(v.day).padStart(2, "0")).replace(/%H/g, "06").replace(/%M/g, "00");
+    const CTX = {
+      number: "FCT-1001", issue_date: d(2026, 7, 3), due_date: d(2026, 8, 2), created: d(2026, 7, 3),
+      currency: "RON", total: "2480.00", kind: "invoice", direction: "received", cif: "12345678",
+      seller_name: "ACME CONSTRUCT S.R.L.", seller_cif: "18293401",
+      buyer_name: "EXEMPLU COM S.R.L.", buyer_cif: "12345678",
+      partner_name: "ACME CONSTRUCT S.R.L.", partner_cif: "18293401",
+      message_id: "3204118867", request_id: "5501283340", message_type: "FACTURA PRIMITA",
+    };
+    let badVar = null;
+    const rendered = tpl.replace(/\{([A-Za-z_]+)(?::([^{}]*))?\}/g, (m, name, fmt) => {
+      if (!(name in CTX)) { badVar = badVar || name; return m; }
+      const v = CTX[name];
+      return typeof v === "object" ? fmtDate(v, fmt) : String(v);
+    });
+    return {
+      theme: this.props.theme ?? "light",
+      rows, chips, sel: selWithPill,
+      periods, customPeriod: period === "Personalizat…",
+      fromDate: this.state.from, toDate: this.state.to,
+      onFrom: (e) => this.setState({ from: e.target.value }),
+      onTo: (e) => this.setState({ to: e.target.value }),
+      calDays, calOpen: this.state.calOpen,
+      openCal: () => this.setState({ calOpen: true, calPhase: 0 }),
+      closeCal: () => this.setState({ calOpen: false, calPhase: 0 }),
+      countLabel: visible.length + " afișate · 128 în arhivă",
+      selFailing: sel.failing === true, selNormal: !sel.failing,
+      selLate, selLateText,
+      dirOpts, arts, cifs,
+      lookback: this.state.lookback,
+      lookbackLabel: this.state.lookback + " zile",
+      onLookback: (e) => this.setState({ lookback: Number(e.target.value) }),
+      freq: this.state.freq,
+      onFreq: (e) => this.setState({ freq: e.target.value }),
+      tpl, onTpl: (e) => this.setState({ tpl: e.target.value }),
+      tplOk: !badVar, tplBad: !!badVar,
+      tplError: badVar ? "Variabilă necunoscută: {" + badVar + "}" : "",
+      tplPreview: "~/Facturi/" + rendered + ".zip",
+      noop: () => {},
+    };
+  }
+}
+</script>
+</body>
+</html>

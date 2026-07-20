@@ -17,3 +17,6 @@ wheels/
 # Coverage
 .coverage
 coverage.xml
+
+# macOS Finder metadata
+.DS_Store
