@@ -28,12 +28,33 @@ __all__ = [
     "OutputConfig",
     "SyncConfig",
     "default_config_path",
+    "default_env_path",
     "default_state_path",
     "load_config",
     "write_default_config",
 ]
 
 APP_NAME = "anaf-sync"
+
+
+def default_config_path() -> Path:
+    """``config.toml`` in the platform config dir (roaming on Windows)."""
+    return platformdirs.user_config_path(APP_NAME, appauthor=False) / "config.toml"
+
+
+def default_env_path() -> Path:
+    """``.env`` next to the config file — the location scheduled runs can find.
+
+    A CWD-relative ``.env`` works interactively but not under Task Scheduler,
+    systemd, or launchd, whose working directory is not the project folder.
+    """
+    return default_config_path().with_name(".env")
+
+
+def default_state_path() -> Path:
+    """``state.json`` in the platform state dir (survives config wipes)."""
+    return platformdirs.user_state_path(APP_NAME, appauthor=False) / "state.json"
+
 
 _DEFAULT_TEMPLATE = (
     "{cif}/{direction}/{issue_date:%Y}/{issue_date:%m}/"
@@ -111,9 +132,14 @@ class AuthSettings(BaseSettings):
     """ANAF OAuth credentials and token-store location, from ``ANAFPY_*`` env vars.
 
     Mirrors anafpy's own MCP-server config so one login serves every consumer.
+    Env files hold the same ``ANAFPY_*`` variables: the config-dir ``.env`` is
+    the one scheduled runs (undefined CWD) can find, a CWD ``.env`` wins over
+    it interactively, and real environment variables beat both.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(default_env_path(), ".env"), extra="ignore"
+    )
 
     client_id: str | None = Field(default=None, validation_alias="ANAFPY_CLIENT_ID")
     client_secret: str | None = Field(
@@ -153,16 +179,6 @@ class AuthSettings(BaseSettings):
     @classmethod
     def from_env(cls) -> Self:
         return cls()
-
-
-def default_config_path() -> Path:
-    """``config.toml`` in the platform config dir (roaming on Windows)."""
-    return platformdirs.user_config_path(APP_NAME, appauthor=False) / "config.toml"
-
-
-def default_state_path() -> Path:
-    """``state.json`` in the platform state dir (survives config wipes)."""
-    return platformdirs.user_state_path(APP_NAME, appauthor=False) / "state.json"
 
 
 def load_config(path: Path) -> SyncConfig:

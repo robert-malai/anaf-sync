@@ -95,6 +95,14 @@ programate token-urile expirate. Token-ul de acces ține ~90 de zile,
 refresh-ul ~365 — browserul și certificatul revin în joc doar când expiră și
 acesta.
 
+> **Atenție la `.env` + rulări programate:** un `.env` din directorul
+> *curent* funcționează doar interactiv — joburile programate (Task
+> Scheduler, systemd, launchd) nu pornesc din folderul tău și nu citesc
+> profilul shell-ului. Pentru rulările programate pune `.env`-ul cu
+> variabilele `ANAFPY_*` lângă `config.toml`, în directorul de configurare
+> (calea o vezi cu `anaf-sync status`; tot acolo verifici și dacă
+> credențialele sunt găsite).
+
 ## Configurare
 
 ```bash
