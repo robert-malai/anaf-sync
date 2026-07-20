@@ -28,6 +28,7 @@ dependencies = [
     # Native log sinks for scheduled runs (logsink.py); journald needs nothing.
     "pyoslog>=1.0 ; sys_platform == 'darwin'",
     "pywin32>=306 ; sys_platform == 'win32'",
+    "filelock>=3.13",
 ]
 
 [project.scripts]
