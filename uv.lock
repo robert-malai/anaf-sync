@@ -16,6 +16,8 @@ dependencies = [
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyoslog", marker = "sys_platform == 'darwin'" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "structlog" },
 ]
 
@@ -27,6 +29,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "types-pywin32" },
 ]
 
 [package.metadata]
@@ -36,6 +39,8 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.2" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
+    { name = "pyoslog", marker = "sys_platform == 'darwin'", specifier = ">=1.0" },
+    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
     { name = "structlog", specifier = ">=24.1" },
 ]
 
@@ -47,6 +52,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.6" },
+    { name = "types-pywin32", specifier = ">=306" },
 ]
 
 [[package]]
@@ -931,6 +937,22 @@ wheels = [
 ]
 
 [[package]]
+name = "pyoslog"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/44/a5a557788e04cd3a706e85ec69182bbea88384dab825e2c79f24f6030612/pyoslog-1.2.0.tar.gz", hash = "sha256:10632e39c1294bf0d7d398a81c87bb9f7e13ec2dea16f199ba28c1278cda04b4", size = 20073 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/f7/65a7e491564c44cfd416b1912009423c969f4f2c1988e6f9975b8e56ba3b/pyoslog-1.2.0-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:a69a2721541a3fba67168c60f719bf6f01136062e4042c38aa95494bf5340357", size = 18062 },
+    { url = "https://files.pythonhosted.org/packages/e3/94/c70cde775aa20f35f691f4167691e3dde123b0f85fa1718cb5427cfb29b1/pyoslog-1.2.0-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:5dc43869cceed768c985035e725c42b6a5af3827cd1a00fdd1858e391affbac7", size = 18234 },
+    { url = "https://files.pythonhosted.org/packages/48/f4/515ce7d8111783f2a6f1880e8be17ff42464d1fada16a7723bdf08bcf745/pyoslog-1.2.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:0b24be8f6d6c2d3ae3906241fe396ec1a0664c30254868da1e16b2bae8da839d", size = 18193 },
+    { url = "https://files.pythonhosted.org/packages/00/18/4d9b47a2256105c9d23d7bcdd08e3b3c78caa95c726789da81481affeb9c/pyoslog-1.2.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:9a1c01b6a94496a8fdbb623649e9a4450afc1d8c59d3fac19d7f5ba7e7926830", size = 18219 },
+    { url = "https://files.pythonhosted.org/packages/f0/96/6446a70746408c8499e6482480d35de5c90052c8d779c15a5abd1eb8bfdd/pyoslog-1.2.0-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:a9d8f900445421b3e6c2fe02ecae8dd9f7a647ec3d78416cca1d1aa305e5450c", size = 18061 },
+    { url = "https://files.pythonhosted.org/packages/d7/4d/eddbee0669fe5f49a2c34ddd680517cc8583f518e1b468b54780af1fcf5e/pyoslog-1.2.0-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:f0878bdb398a3206a946ce73c722bbfe7194bb1cf65432282c90d2672b7cfaec", size = 18249 },
+    { url = "https://files.pythonhosted.org/packages/05/da/68104dc08f19efa426d1dcba8495e035bb4b82ed81e62255fdec35106324/pyoslog-1.2.0-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:b8649827f59707805a37b29938c57693f0c1bf6df38c9dcdc211b86dc3905efc", size = 18199 },
+    { url = "https://files.pythonhosted.org/packages/eb/63/2dfb5458d32d78d203c05aa63052f077c56b866c0882f585c7cf3d3e8b39/pyoslog-1.2.0-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:68011790df2122537907da0bbd3a29b6bf3dec6c3ddff2161483fd95130a121c", size = 18221 },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1009,6 +1031,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/52/a0/07907b6ff512674d9b201859f7d212298c44933633c946703a20c25e9d81/pytokens-0.4.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:967cf6e3fd4adf7de8fc73cd3043754ae79c36475c1c11d514fc72cf5490094a", size = 306698 },
     { url = "https://files.pythonhosted.org/packages/39/2a/cbbf9250020a4a8dd53ba83a46c097b69e5eb49dd14e708f496f548c6612/pytokens-0.4.1-cp314-cp314t-win_amd64.whl", hash = "sha256:584c80c24b078eec1e227079d56dc22ff755e0ba8654d8383b2c549107528918", size = 116287 },
     { url = "https://files.pythonhosted.org/packages/c6/78/397db326746f0a342855b81216ae1f0a32965deccfd7c830a2dbc66d2483/pytokens-0.4.1-py3-none-any.whl", hash = "sha256:26cef14744a8385f35d0e095dc8b3a7583f6c953c2e3d269c7f82484bf5ad2de", size = 13729 },
+]
+
+[[package]]
+name = "pywin32"
+version = "312"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/ff/32aa7d2ed0ab12b323aaa64f9b75e6ad4f8fd09f9ccfc28c79414d46838d/pywin32-312-cp312-cp312-win32.whl", hash = "sha256:dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b", size = 6371877 },
+    { url = "https://files.pythonhosted.org/packages/03/d9/77040d3b43df3f3be32ea289433d660d2727f5ba327bc73be835127d9d60/pywin32-312-cp312-cp312-win_amd64.whl", hash = "sha256:b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc", size = 6914841 },
+    { url = "https://files.pythonhosted.org/packages/e3/cc/7b1ec671775756020a0ee7f4feeaf3c568f0ab86bd3900088cf986937a92/pywin32-312-cp312-cp312-win_arm64.whl", hash = "sha256:6017c58e12f6809fbb0555b75df144c2922a9ffd18e4b9b5afa863b6c1a9d950", size = 6727901 },
+    { url = "https://files.pythonhosted.org/packages/2d/41/12fbfd7f36ed2146d8bc9de96c2741296bf0d490b98508496cff322e274c/pywin32-312-cp313-cp313-win32.whl", hash = "sha256:7a27df850933d16a8eabfbaeb73d52b273e2da667f80d70b01a89d1f6828d02c", size = 6370184 },
+    { url = "https://files.pythonhosted.org/packages/ba/db/36a78e3403099d31d9746d13fdcde5accc43c1155f375a34d15983a479a7/pywin32-312-cp313-cp313-win_amd64.whl", hash = "sha256:c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9", size = 6914298 },
+    { url = "https://files.pythonhosted.org/packages/84/37/c1697194092b76de9ed47ca124323f02c57ffc8a45c06f88a3d5acaf01eb/pywin32-312-cp313-cp313-win_arm64.whl", hash = "sha256:59aba5d5940842075343a5ddc6b11f1cdf0d1567fe745290359dfbcc7c2eb831", size = 6727640 },
+    { url = "https://files.pythonhosted.org/packages/fc/2b/1f3cded5822fd49c02f40544cbb5f58c7cfd6b1694869fd476cb6170ee97/pywin32-312-cp314-cp314-win32.whl", hash = "sha256:a77a90fbb6881238d2ca9c6fd797b25817f3768fe78d214a90137ff055a75f5b", size = 6468928 },
+    { url = "https://files.pythonhosted.org/packages/21/82/3bf86d2e2808902013132e1ce905a7da0da53790f3836c64bf44d55e24f3/pywin32-312-cp314-cp314-win_amd64.whl", hash = "sha256:a4dd3a848290ef724347b19f301045831d8e802fa4464f491b98b1e0a081432e", size = 7024157 },
+    { url = "https://files.pythonhosted.org/packages/a4/0e/73f6d6800b4f27655abd9e9f6aaeaefcddb2b946e4674efa2bab184a7f7b/pywin32-312-cp314-cp314-win_arm64.whl", hash = "sha256:9fce94568364e0155e6dfb781ac5d95903be8baf28670632beab1b523f300daa", size = 6839598 },
+    { url = "https://files.pythonhosted.org/packages/eb/61/caa39686032d2ebdd04ff0ab5cbe163126c0066d98e00c9018646e42393b/pywin32-312-cp315-cp315-win32.whl", hash = "sha256:5c1fbe4a937a73ae9297384a3da38518cbc694c68ad8a809b2e19acd350f03ed", size = 6471159 },
+    { url = "https://files.pythonhosted.org/packages/0f/cd/7e1de64a4a6f69c04214169657ccab0d93a670ea50e35eb8f489d7378249/pywin32-312-cp315-cp315-win_amd64.whl", hash = "sha256:c2f03a0f73f804a13c2735b99392b0cd426bb4f2c4d0178e5ac966a0f21618d5", size = 7025293 },
+    { url = "https://files.pythonhosted.org/packages/23/ed/4532e9388e65fa16b46776ef47ad631a64eda1631884488af707666350ed/pywin32-312-cp315-cp315-win_arm64.whl", hash = "sha256:a8597d28f267b39074aef51fa593530082b39cbe5a074226096857b1fed2dfb9", size = 6840337 },
 ]
 
 [[package]]
@@ -1100,6 +1141,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926 },
+]
+
+[[package]]
+name = "types-pywin32"
+version = "312.0.0.20260609"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/e1/a42af4d29cf9a8d9d579bedd022b9f314093bfd9ffe1034ca729acebb30b/types_pywin32-312.0.0.20260609.tar.gz", hash = "sha256:3b6ec4ebf8607ef97563e907e381d8dc40260c3c54ff8819dcea696bd67ca13f", size = 334927 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/eb/008771f4e2c7307b06623ee8bdde12bf9261305f35443e1b943a45a2d5ae/types_pywin32-312.0.0.20260609-py3-none-any.whl", hash = "sha256:713096e5de8202e6a46392e7731653aa99e458f76cebfea0b15d80901f3bb5e1", size = 397302 },
 ]
 
 [[package]]

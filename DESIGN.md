@@ -201,7 +201,19 @@ Mirrors anafpy's hybrid model:
   and turned into exit codes (non-zero when anything failed, so the OS
   scheduler's failure status is meaningful).
 - `structlog` key-value logging throughout (`archived`,
-  `message_id=…, path=…`), console-rendered; `--verbose` for debug.
+  `message_id=…, path=…`); `--verbose` for debug.
+- **Logs go where the platform's own tools look** (`logsink.py`). An
+  interactive run (stderr is a TTY) keeps the pretty console renderer. A
+  scheduled run logs through the OS's native facility directly — the Windows
+  Application event log via `ReportEvent`, the macOS unified log via
+  `os_log` (subsystem `ro.anaf-sync`), journald via its native datagram
+  socket — so Event Viewer / `Get-WinEvent`, `log show`/`log stream`, and
+  `journalctl` work with no capture files or pipes in between, and severity
+  filtering maps onto each facility's own levels. `ANAF_SYNC_LOG=console|system`
+  overrides the TTY detection. In system mode the CLI boundary also logs
+  `run_failed` / `sync_done` events and installs an excepthook that records
+  crash tracebacks (`run_crashed`), because a scheduled run's stderr goes
+  nowhere.
 
 ## 9. Known trade-offs and future work
 

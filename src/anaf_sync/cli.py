@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import sys
+import traceback
 from pathlib import Path
+from types import TracebackType
 from typing import Annotated
 
 import structlog
@@ -21,6 +23,7 @@ from .config import (
     write_default_config,
 )
 from .engine import run_sync
+from .logsink import LogMode, resolve_mode, system_log_handler
 from .scheduling import ScheduleError
 from .scheduling import install as schedule_install
 from .scheduling import status as schedule_status
@@ -58,16 +61,68 @@ ConfigOption = Annotated[
 ]
 
 
-def _configure_logging(verbose: bool) -> None:
+# Set by `_launcher`; `system` on scheduled (non-TTY) runs, where boundary
+# errors must also reach the OS log because stderr goes nowhere.
+_log_mode = LogMode.CONSOLE
+logger = structlog.get_logger(__name__)
+
+
+def _configure_logging(verbose: bool, mode: LogMode) -> None:
     level = logging.DEBUG if verbose else logging.INFO
+    if mode is LogMode.CONSOLE:
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(level),
+            processors=[
+                structlog.processors.add_log_level,
+                structlog.processors.TimeStamper(fmt="%H:%M:%S"),
+                structlog.dev.ConsoleRenderer(),
+            ],
+        )
+        return
+    # System mode: route structlog through stdlib logging into the native
+    # sink. The sink records timestamp and severity itself, so the message
+    # carries only the event and its key-value pairs.
     structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(level),
-        processors=[
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="%H:%M:%S"),
-            structlog.dev.ConsoleRenderer(),
-        ],
+        processors=[structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
     )
+    handler = system_log_handler()
+    handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.LogfmtRenderer(key_order=["event"]),
+            ],
+        )
+    )
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(level)
+    # A crash (anything outside the AnafError boundary) must land in the OS
+    # log too — its traceback would otherwise vanish with stderr.
+    sys.excepthook = _log_crash
+
+
+def _log_crash(
+    exc_type: type[BaseException],
+    exc: BaseException,
+    tb: TracebackType | None,
+) -> None:
+    logger.critical(
+        "run_crashed",
+        error=f"{exc_type.__name__}: {exc}",
+        traceback="".join(traceback.format_exception(exc_type, exc, tb)),
+    )
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+def _fail(message: str) -> int:
+    """Report a boundary error on stderr and, when scheduled, the OS log."""
+    print(f"error: {message}", file=sys.stderr)
+    if _log_mode is LogMode.SYSTEM:
+        logger.error("run_failed", error=message)
+    return 1
 
 
 def _resolve_config_path(option: Path | None) -> Path:
@@ -82,7 +137,13 @@ def _launcher(
     ] = False,
 ) -> int:
     """Archive RO e-Factura invoices locally, on a schedule."""
-    _configure_logging(verbose)
+    global _log_mode
+    try:
+        _log_mode = resolve_mode()
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    _configure_logging(verbose, _log_mode)
     result = app(tokens)
     return result if isinstance(result, int) else 0
 
@@ -149,9 +210,19 @@ async def sync(
             redownload=redownload,
         )
     except (FileNotFoundError, ValueError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return _fail(str(exc))
 
+    if _log_mode is LogMode.SYSTEM:
+        # One queryable summary event per run; the engine already logged the
+        # per-message events, including each failure.
+        logger.info(
+            "sync_done",
+            listed=report.listed,
+            new=report.downloaded,
+            already_archived=report.already_archived,
+            non_invoice=report.skipped_non_invoice,
+            failures=len(report.failures),
+        )
     print(
         f"listed {report.listed} | new {report.downloaded} | "
         f"already archived {report.already_archived} | "
@@ -231,8 +302,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = app.meta(argv)
     except AnafError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return _fail(str(exc))
     except KeyboardInterrupt:
         return 130
     # --help/--version take the None branch; commands always return their code.

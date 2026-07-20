@@ -88,6 +88,32 @@ This registers the sync with the OS scheduler — Task Scheduler on Windows,
 a systemd user timer on Linux (`loginctl enable-linger $USER` to run while
 logged out), launchd on macOS. No daemon of its own.
 
+## Logs
+
+Interactive runs print human-readable logs to the console. Scheduled runs
+(anything without a TTY) log straight into the platform's native facility,
+so the OS's own tools introspect them — no log files of our own:
+
+```powershell
+# Windows — Application event log, source "anaf-sync"
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='anaf-sync'} -MaxEvents 20
+```
+
+```bash
+# macOS — unified log, subsystem "ro.anaf-sync"
+log show --last 1d --info --predicate 'subsystem == "ro.anaf-sync"'
+log stream --predicate 'subsystem == "ro.anaf-sync"'   # live, while a sync runs
+
+# Linux — journald (also: journalctl --user -u anaf-sync.service)
+journalctl --user SYSLOG_IDENTIFIER=anaf-sync --since today
+journalctl --user SYSLOG_IDENTIFIER=anaf-sync -p err   # failures only
+```
+
+Each run emits a `sync_done` summary event plus per-message events
+(`archived`, `download_failed`, …); severities map onto the native levels, so
+error-only filters work everywhere. Set `ANAF_SYNC_LOG=console` or `=system`
+to override the TTY-based detection.
+
 ## Development
 
 ```bash

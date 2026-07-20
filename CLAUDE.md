@@ -33,6 +33,7 @@ is considered done.
 | `engine.py` | one sync pass: list → dedupe → download (retry) → write artifacts |
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |
+| `logsink.py` | console/system log-mode detection + native sinks: Event Log, os_log, journald |
 | `state.py` | JSON record of archived message ids (idempotence) + failure traces (visibility only, never a retry gate) |
 | `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd |
 
