@@ -1,5 +1,16 @@
 # anaf-sync
 
+<p>
+  <a href="https://github.com/robert-malai/anaf-sync/actions/workflows/ci.yml"><img
+    src="https://img.shields.io/github/actions/workflow/status/robert-malai/anaf-sync/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://codecov.io/gh/robert-malai/anaf-sync"><img
+    src="https://img.shields.io/codecov/c/github/robert-malai/anaf-sync?branch=main" alt="Coverage"></a>
+  <a href="https://pypi.org/project/anaf-sync/"><img
+    src="https://img.shields.io/pypi/v/anaf-sync" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/anaf-sync/"><img
+    src="https://img.shields.io/pypi/pyversions/anaf-sync" alt="Python versions"></a>
+</p>
+
 Scheduled local archiver for RO e-Factura invoices, built on
 [anafpy](https://github.com/robert-malai/anafpy). Each run lists every message
 in ANAF's 60-day retention window, downloads the ones it hasn't seen before,

@@ -23,6 +23,7 @@ anaf-sync = "anaf_sync.cli:app"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
     "mypy>=1.11",
     "ruff>=0.6",
     "black>=24.0",
@@ -64,3 +65,6 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["anaf_sync"]
