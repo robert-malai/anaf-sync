@@ -80,6 +80,9 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live: exercises the real ANAF production endpoints, strictly read-only (needs .env + `anafpy auth login`); opt in with ANAFPY_LIVE=1",
+]
 
 [tool.coverage.run]
 source = ["anaf_sync"]

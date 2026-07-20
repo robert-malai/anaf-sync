@@ -9,6 +9,11 @@ wheels/
 # Virtual environments
 .venv
 
+# Environment files (ANAF credentials — never commit, at any depth)
+.env
+.env.*
+*.env
+
 # Coverage
 .coverage
 coverage.xml

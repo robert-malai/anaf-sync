@@ -43,3 +43,20 @@ Tests use fakes at the `EFacturaClient` seam (see
 [tests/test_engine.py](tests/test_engine.py)) and `model_construct` to build
 invoice views without full UBL validation. Follow those patterns rather than
 mocking HTTP.
+
+### Live tests
+
+[tests/test_sync_live.py](tests/test_sync_live.py) exercises the real ANAF
+**production** endpoints, strictly read-only — anaf-sync never files anything,
+so unlike anafpy's roundtrip suites there is no TEST-environment upload here.
+Archives and state land in pytest tmp dirs; your real archive and `state.json`
+are never touched.
+
+They need a repo-root `.env` (gitignored) with `ANAFPY_CLIENT_ID`,
+`ANAFPY_CLIENT_SECRET`, and `ANAFPY_CIF`, plus a token store from
+`anafpy auth login` (set `ANAFPY_TOKEN_STORE_BACKEND=file` if the login lives
+in a file). Missing pieces skip, not fail. Run explicitly:
+
+```bash
+ANAFPY_LIVE=1 uv run pytest -q -m live
+```
