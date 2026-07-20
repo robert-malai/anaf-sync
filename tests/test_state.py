@@ -29,6 +29,40 @@ def test_forget(tmp_path: Path) -> None:
     assert not state.is_downloaded("m1")
 
 
+def test_owner_index_follows_mutations(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    state = SyncState.load(path)
+    state.record("m1", "a/b", ["zip"])
+    assert state.owner_of("a/b") == "m1"
+    assert SyncState.load(path).owner_of("a/b") == "m1"  # rebuilt on load
+
+    state.record("m1", "a/c", ["zip"])  # re-archived under a new base
+    assert state.owner_of("a/b") is None
+    assert state.owner_of("a/c") == "m1"
+
+    state.forget("m1")
+    assert state.owner_of("a/c") is None
+
+
+def test_prune_releases_ownership(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=120)).isoformat()
+    path.write_text(
+        json.dumps(
+            {
+                "downloaded": {
+                    "old": {"saved_at": old, "base_path": "a/b", "artifacts": []}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = SyncState.load(path)
+    assert state.owner_of("a/b") == "old"
+    state.prune(dt.timedelta(days=90))
+    assert state.owner_of("a/b") is None
+
+
 def test_failure_roundtrip(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     state = SyncState.load(path)

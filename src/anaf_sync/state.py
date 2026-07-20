@@ -58,6 +58,12 @@ class SyncState:
     def __init__(self, path: Path, data: _StateFile) -> None:
         self._path = path
         self._data = data
+        # Reverse index: which message owns which base path. The engine uses
+        # it to keep two invoices that render the same template path apart.
+        self._owners = {
+            record.base_path: message_id
+            for message_id, record in data.downloaded.items()
+        }
 
     @classmethod
     def load(cls, path: Path) -> Self:
@@ -70,12 +76,22 @@ class SyncState:
     def is_downloaded(self, message_id: str) -> bool:
         return message_id in self._data.downloaded
 
+    def record_of(self, message_id: str) -> DownloadRecord | None:
+        return self._data.downloaded.get(message_id)
+
+    def owner_of(self, base_path: str) -> str | None:
+        """The message id whose archived artifacts live at ``base_path``."""
+        return self._owners.get(base_path)
+
     def record(self, message_id: str, base_path: str, artifacts: list[str]) -> None:
+        if (previous := self._data.downloaded.get(message_id)) is not None:
+            self._owners.pop(previous.base_path, None)  # re-archived elsewhere
         self._data.downloaded[message_id] = DownloadRecord(
             saved_at=dt.datetime.now(dt.UTC),
             base_path=base_path,
             artifacts=artifacts,
         )
+        self._owners[base_path] = message_id
         self._data.failures.pop(message_id, None)  # archived at last
         self._save()
 
@@ -93,7 +109,8 @@ class SyncState:
         self._save()
 
     def forget(self, message_id: str) -> None:
-        if self._data.downloaded.pop(message_id, None) is not None:
+        if (record := self._data.downloaded.pop(message_id, None)) is not None:
+            self._owners.pop(record.base_path, None)
             self._save()
 
     def prune(self, max_age: dt.timedelta) -> int:
@@ -112,6 +129,7 @@ class SyncState:
             if record.saved_at < cutoff
         ]
         for message_id in stale:
+            self._owners.pop(self._data.downloaded[message_id].base_path, None)
             del self._data.downloaded[message_id]
         stale_failures = [
             message_id
@@ -145,6 +163,13 @@ class SyncState:
         )
         try:
             os.write(fd, payload.encode("utf-8"))
+            os.fsync(fd)  # atomic against power loss, not just process death
         finally:
             os.close(fd)
         Path(tmp_name).replace(self._path)
+        if os.name == "posix":  # rename durability needs a directory fsync
+            dir_fd = os.open(self._path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
