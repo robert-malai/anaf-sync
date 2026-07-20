@@ -28,7 +28,7 @@ is considered done.
 
 | Module | Responsibility |
 |---|---|
-| `cli.py` | typer commands; the only place exceptions are caught for the user |
+| `cli.py` | cyclopts commands; the only place exceptions are caught for the user |
 | `config.py` | TOML sync config + `ANAFPY_*` env auth settings; `init` template |
 | `engine.py` | one sync pass: list → dedupe → download (retry) → write artifacts |
 | `context.py` | assembles the template variable dict for one message |
@@ -74,7 +74,8 @@ is considered done.
 Robert's standard Python stack applies (see the `python-conventions` skill):
 Python 3.12+, `uv`, src layout, full type hints with `mypy --strict`,
 Pydantic v2 for anything structured, `pydantic-settings` for env config,
-`structlog` key-value logging, `httpx`/`tenacity` (via anafpy), `typer` CLI,
+`structlog` key-value logging, `httpx`/`tenacity` (via anafpy), `cyclopts` CLI
+(matching anafpy),
 `pytest` with pragmatic coverage. Google-style docstrings on public surfaces.
 
 Tests use fakes at the `EFacturaClient` seam (`tests/test_engine.py`) and

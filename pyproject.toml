@@ -1,6 +1,6 @@
 [project]
 name = "anaf-sync"
-version = "0.1.0"
+version = "0.1.1"
 description = "Scheduled local archiver for RO e-Factura invoices, built on anafpy."
 readme = "README.md"
 license = "Apache-2.0"
@@ -20,7 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "anafpy>=0.4.0",
-    "typer>=0.12",
+    "cyclopts>=3.14",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "structlog>=24.1",
@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-anaf-sync = "anaf_sync.cli:app"
+anaf-sync = "anaf_sync.cli:main"
 
 [dependency-groups]
 dev = [

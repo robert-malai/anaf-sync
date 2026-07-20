@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import structlog
-import typer
 from anafpy.exceptions import AnafError
+from cyclopts import App, Parameter
+from cyclopts.validators import Number
 
 from . import __version__
 from .config import (
@@ -27,22 +27,33 @@ from .scheduling import status as schedule_status
 from .scheduling import uninstall as schedule_uninstall
 from .state import SyncState
 
-app = typer.Typer(
+app = App(
     name="anaf-sync",
     help="Archive RO e-Factura invoices locally, on a schedule.",
-    no_args_is_help=True,
+    version=f"anaf-sync {__version__}",
+    # `main` owns the exit-code mapping (AnafError -> 1, Ctrl-C -> 130), the
+    # same shape as anafpy's CLI: commands hand their exit codes back instead
+    # of sys.exit()-ing inside cyclopts, and KeyboardInterrupt propagates to
+    # `main`'s handler.
+    result_action="return_value",
+    suppress_keyboard_interrupt=False,
 )
-schedule_app = typer.Typer(help="Manage the OS-level schedule for `anaf-sync sync`.")
-app.add_typer(schedule_app, name="schedule")
+# The meta app (the `--verbose` launcher below) is auto-created, so its
+# Ctrl-C behaviour must be set by assignment: without this it turns
+# KeyboardInterrupt into SystemExit(130) before `main`'s handler sees it.
+app.meta.suppress_keyboard_interrupt = False
 
-_CONFIG_ENV = "ANAF_SYNC_CONFIG"
+schedule_app = App(
+    name="schedule", help="Manage the OS-level schedule for `anaf-sync sync`."
+)
+app.command(schedule_app)
 
 ConfigOption = Annotated[
     Path | None,
-    typer.Option(
-        "--config",
-        "-c",
-        help=f"Config file (default: ${_CONFIG_ENV} or the platform config dir).",
+    Parameter(
+        name=["--config", "-c"],
+        env_var="ANAF_SYNC_CONFIG",
+        help="Config file (default: $ANAF_SYNC_CONFIG or the platform config dir).",
     ),
 ]
 
@@ -60,85 +71,88 @@ def _configure_logging(verbose: bool) -> None:
 
 
 def _resolve_config_path(option: Path | None) -> Path:
-    if option is not None:
-        return option.expanduser()
-    if env := os.environ.get(_CONFIG_ENV):
-        return Path(env).expanduser()
-    return default_config_path()
+    return option.expanduser() if option is not None else default_config_path()
 
 
-@app.callback()
-def _main(
+@app.meta.default
+def _launcher(
+    *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Debug logging.")
+        bool, Parameter(name=["--verbose", "-v"], negative="", help="Debug logging.")
     ] = False,
-) -> None:
+) -> int:
+    """Archive RO e-Factura invoices locally, on a schedule."""
     _configure_logging(verbose)
+    result = app(tokens)
+    return result if isinstance(result, int) else 0
 
 
-@app.command()
-def version() -> None:
+@app.command
+def version() -> int:
     """Print the anaf-sync version."""
-    typer.echo(f"anaf-sync {__version__}")
+    print(f"anaf-sync {__version__}")
+    return 0
 
 
-@app.command()
+@app.command
 def init(
+    *,
     config: ConfigOption = None,
     force: Annotated[
-        bool, typer.Option("--force", help="Overwrite an existing config.")
+        bool, Parameter(negative="", help="Overwrite an existing config.")
     ] = False,
-) -> None:
+) -> int:
     """Write a commented default configuration file."""
     path = _resolve_config_path(config)
     try:
         write_default_config(path, force=force)
     except FileExistsError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(f"wrote {path}")
-    typer.echo("Edit it (CIF, output folder, template), then run: anaf-sync sync")
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {path}")
+    print("Edit it (CIF, output folder, template), then run: anaf-sync sync")
+    return 0
 
 
-@app.command()
-def sync(
+@app.command
+async def sync(
+    *,
     config: ConfigOption = None,
     days: Annotated[
         int | None,
-        typer.Option(min=1, max=60, help="Override the lookback window."),
+        Parameter(
+            validator=Number(gte=1, lte=60), help="Override the lookback window."
+        ),
     ] = None,
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="List what would be downloaded; write nothing."),
+        Parameter(negative="", help="List what would be downloaded; write nothing."),
     ] = False,
     redownload: Annotated[
         bool,
-        typer.Option(
-            "--redownload", help="Ignore the state file and fetch everything."
-        ),
+        Parameter(negative="", help="Ignore the state file and fetch everything."),
     ] = False,
-) -> None:
+) -> int:
     """Download all new e-Factura invoices into the archive."""
     config_path = _resolve_config_path(config)
+    # AnafError propagates to `main`, which formats it identically.
     try:
         cfg = load_config(config_path)
         provider = AuthSettings.from_env().build_provider()
         state = SyncState.load(default_state_path())
-        report = asyncio.run(
-            run_sync(
-                cfg,
-                provider,
-                state,
-                days=days,
-                dry_run=dry_run,
-                redownload=redownload,
-            )
+        report = await run_sync(
+            cfg,
+            provider,
+            state,
+            days=days,
+            dry_run=dry_run,
+            redownload=redownload,
         )
-    except (AnafError, FileNotFoundError, ValueError) as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
-    typer.echo(
+    print(
         f"listed {report.listed} | new {report.downloaded} | "
         f"already archived {report.already_archived} | "
         f"non-invoice {report.skipped_non_invoice}"
@@ -146,70 +160,84 @@ def sync(
     )
     if report.failures:
         for message_id, error in report.failures:
-            typer.echo(f"failed {message_id}: {error}", err=True)
-        raise typer.Exit(code=1)
+            print(f"failed {message_id}: {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
-@app.command()
-def status(config: ConfigOption = None) -> None:
+@app.command
+def status(*, config: ConfigOption = None) -> int:
     """Show configuration, archive state, and schedule status."""
     config_path = _resolve_config_path(config)
-    typer.echo(
-        f"config:   {config_path} ({'ok' if config_path.exists() else 'MISSING'})"
-    )
+    print(f"config:   {config_path} ({'ok' if config_path.exists() else 'MISSING'})")
     state = SyncState.load(default_state_path())
-    typer.echo(f"state:    {state.path} ({state.count} messages archived)")
+    print(f"state:    {state.path} ({state.count} messages archived)")
     for message_id, failure in state.failures.items():
-        typer.echo(
+        print(
             f"failing:  {message_id} — {failure.attempts} run(s) since "
             f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
         )
     if config_path.exists():
         cfg = load_config(config_path)
-        typer.echo(f"cifs:     {', '.join(cfg.cifs)}  [{cfg.direction.value}]")
-        typer.echo(f"output:   {cfg.output.resolved_directory}")
-        typer.echo(f"template: {cfg.output.template}")
-    typer.echo(f"schedule: {schedule_status()}")
+        print(f"cifs:     {', '.join(cfg.cifs)}  [{cfg.direction.value}]")
+        print(f"output:   {cfg.output.resolved_directory}")
+        print(f"template: {cfg.output.template}")
+    print(f"schedule: {schedule_status()}")
+    return 0
 
 
-@schedule_app.command("install")
+@schedule_app.command(name="install")
 def schedule_install_cmd(
+    *,
     every: Annotated[
-        str | None,
-        typer.Option("--every", help="Run interval, e.g. 30m, 6h, 1d."),
+        str | None, Parameter(help="Run interval, e.g. 30m, 6h, 1d.")
     ] = None,
     daily_at: Annotated[
-        str | None,
-        typer.Option("--daily-at", help="Run once a day at HH:MM (24h)."),
+        str | None, Parameter(help="Run once a day at HH:MM (24h).")
     ] = None,
-) -> None:
+) -> int:
     """Register `anaf-sync sync` with the OS scheduler.
 
     Uses Task Scheduler on Windows, a systemd user timer on Linux, and
     launchd on macOS.
     """
     try:
-        typer.echo(schedule_install(every=every, daily_at=daily_at))
+        print(schedule_install(every=every, daily_at=daily_at))
     except ScheduleError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
-@schedule_app.command("remove")
-def schedule_remove_cmd() -> None:
+@schedule_app.command(name="remove")
+def schedule_remove_cmd() -> int:
     """Remove the scheduled job."""
     try:
-        typer.echo(schedule_uninstall())
+        print(schedule_uninstall())
     except ScheduleError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
-@schedule_app.command("status")
-def schedule_status_cmd() -> None:
+@schedule_app.command(name="status")
+def schedule_status_cmd() -> int:
     """Show whether the scheduled job is installed."""
-    typer.echo(schedule_status())
+    print(schedule_status())
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        result = app.meta(argv)
+    except AnafError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
+    # --help/--version take the None branch; commands always return their code.
+    return result if isinstance(result, int) else 0
 
 
 if __name__ == "__main__":
-    app()
+    raise SystemExit(main())
