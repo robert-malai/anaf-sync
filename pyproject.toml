@@ -31,6 +31,9 @@ dependencies = [
     "filelock>=3.13",
 ]
 
+[project.urls]
+Homepage = "https://github.com/robert-malai/anaf-sync"
+
 [project.scripts]
 anaf-sync = "anaf_sync.cli:main"
 
