@@ -23,6 +23,7 @@ from .config import (
     write_default_config,
 )
 from .engine import run_sync
+from .lock import LockHeldError, sync_lock
 from .logsink import LogMode, resolve_mode, system_log_handler
 from .scheduling import ScheduleError
 from .scheduling import install as schedule_install
@@ -196,20 +197,24 @@ async def sync(
 ) -> int:
     """Download all new e-Factura invoices into the archive."""
     config_path = _resolve_config_path(config)
+    state_path = default_state_path()
     # AnafError propagates to `main`, which formats it identically.
     try:
         cfg = load_config(config_path)
         provider = AuthSettings.from_env().build_provider()
-        state = SyncState.load(default_state_path())
-        report = await run_sync(
-            cfg,
-            provider,
-            state,
-            days=days,
-            dry_run=dry_run,
-            redownload=redownload,
-        )
-    except (FileNotFoundError, ValueError) as exc:
+        # One run at a time: overlapping scheduled passes would download the
+        # same messages twice and clobber each other's state file.
+        with sync_lock(state_path.with_name("sync.lock")):
+            state = SyncState.load(state_path)
+            report = await run_sync(
+                cfg,
+                provider,
+                state,
+                days=days,
+                dry_run=dry_run,
+                redownload=redownload,
+            )
+    except (FileNotFoundError, ValueError, LockHeldError) as exc:
         return _fail(str(exc))
 
     if _log_mode is LogMode.SYSTEM:
@@ -221,12 +226,14 @@ async def sync(
             new=report.downloaded,
             already_archived=report.already_archived,
             non_invoice=report.skipped_non_invoice,
+            missing_id=report.missing_id,
             failures=len(report.failures),
         )
     print(
         f"listed {report.listed} | new {report.downloaded} | "
         f"already archived {report.already_archived} | "
         f"non-invoice {report.skipped_non_invoice}"
+        + (f" | missing id {report.missing_id}" if report.missing_id else "")
         + (f" | would download {report.would_download}" if dry_run else "")
     )
     if report.failures:
@@ -241,6 +248,9 @@ def status(*, config: ConfigOption = None) -> int:
     """Show configuration, archive state, and schedule status."""
     config_path = _resolve_config_path(config)
     print(f"config:   {config_path} ({'ok' if config_path.exists() else 'MISSING'})")
+    auth = AuthSettings.from_env()
+    credentials = "ok" if auth.client_id and auth.client_secret else "MISSING"
+    print(f"auth:     ANAFPY_CLIENT_ID/SECRET {credentials}")
     state = SyncState.load(default_state_path())
     print(f"state:    {state.path} ({state.count} messages archived)")
     for message_id, failure in state.failures.items():
@@ -249,10 +259,16 @@ def status(*, config: ConfigOption = None) -> int:
             f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
         )
     if config_path.exists():
-        cfg = load_config(config_path)
-        print(f"cifs:     {', '.join(cfg.cifs)}  [{cfg.direction.value}]")
-        print(f"output:   {cfg.output.resolved_directory}")
-        print(f"template: {cfg.output.template}")
+        # status is the diagnostic command — a broken config must be reported
+        # in-line, never crash it with a traceback.
+        try:
+            cfg = load_config(config_path)
+        except ValueError as exc:
+            print(f"config:   INVALID — {exc}")
+        else:
+            print(f"cifs:     {', '.join(cfg.cifs)}  [{cfg.direction.value}]")
+            print(f"output:   {cfg.output.resolved_directory}")
+            print(f"template: {cfg.output.template}")
     print(f"schedule: {schedule_status()}")
     return 0
 
