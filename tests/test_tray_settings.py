@@ -8,6 +8,7 @@ pytest.importorskip("PySide6")
 
 from anaf_sync.config import load_config, write_default_config  # noqa: E402
 from anaf_sync.tray import settings_view as sv  # noqa: E402
+from anaf_sync.tray import strings  # noqa: E402
 from anaf_sync.tray.settings_view import SettingsView  # noqa: E402
 
 
@@ -46,12 +47,20 @@ def test_save_disabled_when_no_artifacts_selected(
     assert not view._save_button.isEnabled()
 
 
-def test_last_cif_cannot_be_unchecked(qtbot: object, tmp_path: Path) -> None:
+def test_last_cif_cannot_be_removed(qtbot: object, tmp_path: Path) -> None:
     view = _view(tmp_path)
-    only = view._cif_buttons["12345678"]
-    assert only.isChecked()
-    only.click()  # try to turn the sole selected CIF off
-    assert only.isChecked()  # refused
+    view._cif_buttons["12345678"].click()  # try to remove the sole CIF
+    assert view._selected_cifs() == ["12345678"]  # refused
+    assert view._cif_error.text() == strings.CIF_LAST_REMAINS
+
+
+def test_add_then_remove_cif(qtbot: object, tmp_path: Path) -> None:
+    view = _view(tmp_path)
+    view._add_cif_edit.setText("40118293")
+    view._on_add_cif()
+    assert view._selected_cifs() == ["12345678", "40118293"]  # config order kept
+    view._cif_buttons["12345678"].click()  # no longer the last one
+    assert view._selected_cifs() == ["40118293"]
 
 
 def test_add_cif_validates_digits(qtbot: object, tmp_path: Path) -> None:
@@ -59,9 +68,19 @@ def test_add_cif_validates_digits(qtbot: object, tmp_path: Path) -> None:
     view._add_cif_edit.setText("RO40118293")
     view._on_add_cif()
     assert "40118293" in view._cif_buttons  # RO prefix stripped, digits kept
+    assert view._cif_error.text() == ""  # cleared on success
     view._add_cif_edit.setText("not-a-cif")
     view._on_add_cif()
     assert "not-a-cif" not in view._cif_buttons
+    assert view._cif_error.text() == strings.CIF_INVALID
+
+
+def test_add_cif_rejects_duplicate(qtbot: object, tmp_path: Path) -> None:
+    view = _view(tmp_path)
+    view._add_cif_edit.setText("12345678")  # already configured
+    view._on_add_cif()
+    assert view._selected_cifs() == ["12345678"]
+    assert view._cif_error.text() == strings.CIF_DUPLICATE
 
 
 def test_save_writes_minimal_diff(qtbot: object, tmp_path: Path) -> None:

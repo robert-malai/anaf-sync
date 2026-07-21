@@ -1,9 +1,11 @@
 """The Setări form — every control maps to an existing ``SyncConfig`` key.
 
 A scrollable three-section form (Companie / Arhivă / Programare) with a pinned
-save bar. It reads the current config, offers the union of configured and
-seen-in-archive CIFs as the follow list (anafpy has no authorized-CIF API),
-previews the path template live, and on save writes a minimal diff through
+save bar. It reads the current config, takes the followed CUIs as free entry
+(validated exactly as ``config.py`` does, at least one kept; archive-seen CUIs
+are offered only as autocomplete — see DESIGN.md §8 for why ANAF's own
+authorization inventory is not the source), previews the path template live,
+and on save writes a minimal diff through
 :mod:`config_io`. Copy is in :mod:`strings`, colours in :mod:`theme`; the form
 never syncs or writes anything but ``config.toml``.
 """
@@ -18,6 +20,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -86,12 +89,12 @@ class SettingsView(QWidget):
         except (FileNotFoundError, ValueError):
             return None
 
-    def _available_cifs(self) -> list[str]:
-        cifs = set(self._config.cifs if self._config else [])
-        if self._state_path.exists():
-            with Archive.open_readonly(self._state_path) as archive:
-                cifs.update(archive.distinct_cifs())
-        return sorted(cifs)
+    def _suggested_cifs(self) -> list[str]:
+        """CIFs already seen in the archive — autocomplete only, never a gate."""
+        if not self._state_path.exists():
+            return []
+        with Archive.open_readonly(self._state_path) as archive:
+            return sorted(archive.distinct_cifs())
 
     # -- construction ---------------------------------------------------------
 
@@ -138,25 +141,34 @@ class SettingsView(QWidget):
         chip_layout = QHBoxLayout(chips)
         chip_layout.setContentsMargins(0, 0, 0, 0)
         chip_layout.setSpacing(6)
-        selected = set(self._config.cifs) if self._config else set()
-        for cif in self._available_cifs():
-            button = QToolButton()
-            button.setText(cif)
-            button.setCheckable(True)
-            button.setChecked(cif in selected)
-            button.clicked.connect(self._on_cif_toggled)
-            self._cif_buttons[cif] = button
-            chip_layout.addWidget(button)
+        self._chip_row = chip_layout
         self._add_cif_edit = QLineEdit()
         self._add_cif_edit.setPlaceholderText(strings.ADD_CIF_PLACEHOLDER)
         self._add_cif_edit.setFixedWidth(90)
+        # Archive-seen CIFs are a convenience over the catalog, not the source of
+        # the list — the user may type any CIF the config would accept.
+        if suggestions := self._suggested_cifs():
+            self._add_cif_edit.setCompleter(QCompleter(suggestions, self))
+        self._add_cif_edit.returnPressed.connect(self._on_add_cif)
         add_button = QPushButton(strings.BTN_ADD_CIF)
         add_button.clicked.connect(self._on_add_cif)
         chip_layout.addWidget(self._add_cif_edit)
         chip_layout.addWidget(add_button)
         chip_layout.addStretch(1)
-        self._chip_row = chip_layout
-        self._labeled(strings.SET_CIFS, chips, strings.HELP_CIFS)
+        # Config order is the user's order; keep it rather than sorting.
+        for cif in self._config.cifs:
+            self._add_chip(cif)
+        self._cif_error = QLabel()
+        self._cif_error.setObjectName("cifError")
+        self._cif_error.hide()
+
+        entry = QWidget()
+        entry_layout = QVBoxLayout(entry)
+        entry_layout.setContentsMargins(0, 0, 0, 0)
+        entry_layout.setSpacing(4)
+        entry_layout.addWidget(chips)
+        entry_layout.addWidget(self._cif_error)
+        self._labeled(strings.SET_CIFS, entry, strings.HELP_CIFS)
 
         directions = QWidget()
         dir_layout = QHBoxLayout(directions)
@@ -317,26 +329,45 @@ class SettingsView(QWidget):
 
     # -- interactions ---------------------------------------------------------
 
-    def _on_cif_toggled(self) -> None:
-        if not self._selected_cifs():
-            # The last checked CIF refuses to uncheck (config needs min 1).
-            sender = self.sender()
-            if isinstance(sender, QToolButton):
-                sender.setChecked(True)
+    def _add_chip(self, cif: str) -> None:
+        """Append a followed-CIF chip; its × removes it from the list."""
+        button = QToolButton()
+        button.setObjectName("cifChip")
+        button.setText(f"{cif}  ×")
+        button.setToolTip(strings.remove_cif(cif))
+        button.clicked.connect(lambda: self._on_remove_cif(cif))
+        self._cif_buttons[cif] = button
+        # Keep the chips ahead of the entry field, button and stretch.
+        self._chip_row.insertWidget(self._chip_row.count() - 3, button)
+
+    def _cif_message(self, text: str) -> None:
+        self._cif_error.setText(text)
+        self._cif_error.setVisible(bool(text))
+
+    def _on_remove_cif(self, cif: str) -> None:
+        if len(self._cif_buttons) == 1:
+            # config.py requires at least one CIF; refuse rather than write junk.
+            self._cif_message(strings.CIF_LAST_REMAINS)
+            return
+        button = self._cif_buttons.pop(cif)
+        self._chip_row.removeWidget(button)
+        button.deleteLater()
+        self._cif_message("")
         self._update_save_enabled()
 
     def _on_add_cif(self) -> None:
+        # Mirrors config.py's validator so the form can never offer a CIF the
+        # config would reject.
         cif = self._add_cif_edit.text().strip().upper().removeprefix("RO")
-        if not cif.isdigit() or cif in self._cif_buttons:
+        if not cif or not cif.isdigit():
+            self._cif_message(strings.CIF_INVALID)
             return
-        button = QToolButton()
-        button.setText(cif)
-        button.setCheckable(True)
-        button.setChecked(True)
-        button.clicked.connect(self._on_cif_toggled)
-        self._cif_buttons[cif] = button
-        self._chip_row.insertWidget(self._chip_row.count() - 3, button)
+        if cif in self._cif_buttons:
+            self._cif_message(strings.CIF_DUPLICATE)
+            return
+        self._add_chip(cif)
         self._add_cif_edit.clear()
+        self._cif_message("")
         self._update_save_enabled()
 
     def _on_lookback(self, value: int) -> None:
@@ -369,7 +400,8 @@ class SettingsView(QWidget):
     # -- read form state ------------------------------------------------------
 
     def _selected_cifs(self) -> list[str]:
-        return [cif for cif, btn in self._cif_buttons.items() if btn.isChecked()]
+        # Every chip present is followed — the list *is* the input.
+        return list(self._cif_buttons)
 
     def _selected_artifacts(self) -> list[str]:
         return [name for name in _ARTIFACTS if self._artifact_boxes[name].isChecked()]
@@ -462,8 +494,10 @@ QLineEdit {{ background-color:{theme.panel_bg}; color:{theme.text};
 QToolButton {{ background-color:{theme.window_bg}; color:{theme.muted};
     border:1px solid {theme.border}; border-radius:6px; padding:4px 8px;
     font-family:{MONO_FONT_FAMILY}; }}
-QToolButton:checked {{ background-color:{theme.accent_soft_bg};
+/* A chip's presence *is* the selection, so it always reads as active. */
+#cifChip {{ background-color:{theme.accent_soft_bg};
     color:{theme.accent}; border-color:{theme.accent}; }}
+#cifError {{ color:{theme.red}; font-size:11px; }}
 #artifactCard {{ border:1px solid {theme.border}; border-radius:6px; }}
 #saveBar {{ background-color:{theme.window_bg};
     border-top:1px solid {theme.border}; }}

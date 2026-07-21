@@ -309,13 +309,29 @@ writes the document back atomically, so hand-written comments and layout
 survive byte-for-byte. Every edit is validated against the real `SyncConfig`
 *before* the write, so an invalid form leaves the file untouched, and the
 template preview renders through the production `PathTemplate` (never a
-reimplementation) so it can never disagree with what a sync would write. Since
-anafpy exposes no authorized-CIF listing, the follow-list offers the union of
-the configured CIFs and those already seen in the archive, plus a validated
-free-entry field — a documented deviation to revisit if anafpy grows such an
-API. Changing the schedule frequency re-installs through `scheduling.py`'s own
+reimplementation) so it can never disagree with what a sync would write.
+Changing the schedule frequency re-installs through `scheduling.py`'s own
 functions; the tray never shells out to `schtasks`/`systemctl`/`launchctl`
 itself.
+
+**The followed CUIs are an input, not a discovered set.** The Setări form takes
+the CUI list as free entry: the user adds and removes entries, each validated
+by the same rule as `config.py` (strip, upper-case, drop an `RO` prefix, must
+be digits), with at least one surviving — `config.toml` is the source of truth
+and the form is simply its editor. anafpy *does* expose an authorization
+inventory (`SpvClient.list_messages(60).authorized_cuis`, surfaced as
+`anafpy spv status` — it is the only endpoint that returns it), but it is
+deliberately **not** wired in as the source of this list. It rides the SPV
+certificate cookie session rather than the `ANAFPY_*` OAuth credentials the
+rest of anaf-sync is built on (§2); that session expires within days, and
+re-establishing it fires the certificate 2FA prompt — an interactive,
+macOS/Windows-only choreography. ANAF also omits the identity fields entirely
+when the queried window holds no messages, so the inventory can come back empty
+for a perfectly valid session. A config editor that could not populate its own
+company field without a PIN prompt would be a worse editor, so discovery stays
+out of the write path. CUIs already seen in the archive are offered as
+**autocomplete suggestions** on the entry field — a convenience over the
+catalog, never a gate on what may be typed.
 
 **Autostart is the platform's job too** (`autostart.py`, mirroring §7's stance
 on scheduling): a macOS LaunchAgent (`RunAtLoad`, `ProcessType Interactive`, no

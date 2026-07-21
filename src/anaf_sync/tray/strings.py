@@ -229,7 +229,10 @@ SET_TEMPLATE = "Șablon de denumire"
 SET_ARTIFACTS = "Fișiere salvate"
 SET_FREQUENCY = "Frecvență"
 
-HELP_CIFS = "Lista provine din autentificarea ANAF — cel puțin un CIF rămâne selectat."
+HELP_CIFS = (
+    "CIF-urile companiilor pentru care se arhivează facturile — doar cifre, "
+    "fără prefixul RO. Cel puțin unul rămâne în listă."
+)
 HELP_LOOKBACK = "ANAF păstrează mesajele cel mult 60 de zile."
 
 DIR_RECEIVED = "Primite"
@@ -239,6 +242,16 @@ DIR_BOTH = "Ambele"
 BTN_CHOOSE = "Alege…"
 BTN_ADD_CIF = "+ Adaugă CIF"
 ADD_CIF_PLACEHOLDER = "CIF nou"
+CIF_INVALID = "CIF invalid — folosește doar cifre, fără prefixul RO."
+CIF_DUPLICATE = "CIF-ul este deja în listă."
+CIF_LAST_REMAINS = "Cel puțin un CIF trebuie să rămână în listă."
+
+
+def remove_cif(cif: str) -> str:
+    """Tooltip for a followed-CIF chip's remove button."""
+    return f"Elimină {cif}"
+
+
 PREVIEW_PREFIX = "Previzualizare: "
 
 # Artifact cards: English name (mono) + Romanian description.
