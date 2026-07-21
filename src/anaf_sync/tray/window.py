@@ -1,15 +1,17 @@
-"""The Facturi main window: sidebar, toolbar, catalog table, details pane.
+"""The Facturi window: toolbar, period row, catalog table, details pane.
 
-A resizable shell (980×620 is the *minimum* — the size the views were
-designed at) with a Facturi view over :class:`CatalogModel` (painted by
-:class:`CatalogDelegate`) and the Setări page. The layout is elastic per
-DESIGN.md §10: the table absorbs extra space (the Partener column flexes),
-while the sidebar, details pane, and toolbar rows stay anchored. Geometry
-persists across launches through ``QSettings`` — deliberately not
-``config.toml``, which only churns on explicit saves. The window is a pure
-observer: selecting a row swaps the details pane; its buttons emit intents
-the window turns into file-manager / sync actions. Filters (direction chips ∧
-period ∧ search) combine into one :class:`CatalogFilters`.
+A resizable shell (980×620 is the *minimum* — the size the view was designed
+at) over :class:`CatalogModel`, painted by :class:`CatalogDelegate`. Setări is
+a **separate window** (:mod:`settings_window`), not a page of a stack; this
+window only asks for it through :attr:`MainWindow.settings_requested`. The
+layout is elastic per DESIGN.md §10: the table absorbs extra space (Partener
+is the stretch section, the other four are user-resizable), while the details
+pane and toolbar rows stay anchored. Geometry and header layout persist
+across launches through ``QSettings`` — deliberately not ``config.toml``,
+which only churns on explicit saves. The window is a pure observer: selecting
+a row swaps the details pane; its buttons emit intents the window turns into
+file-manager / sync actions. Filters (direction chips ∧ period ∧ search)
+combine into one :class:`CatalogFilters`.
 """
 
 from __future__ import annotations
@@ -20,52 +22,51 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import (
-    QByteArray,
-    QDate,
-    QModelIndex,
-    QSettings,
-    Qt,
-    QUrl,
-    Signal,
-)
-from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtCore import QByteArray, QDate, QModelIndex, QUrl, Signal
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QFontMetrics
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDateEdit,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QMainWindow,
-    QStackedWidget,
     QTableView,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ..config import default_config_path, default_state_path
+from ..config import default_state_path
+from . import store
 from .calendar import RangeCalendar
-from .delegates import CatalogDelegate
+from .delegates import PAD_EDGE, PAD_X, CatalogDelegate
 from .details import DetailsPane
 from .models import CatalogFilters, CatalogModel
-from .settings_view import SettingsView
 from .theme import Theme, current_theme, window_qss
 
 __all__ = ["MainWindow", "reveal_in_file_manager"]
 
 _WIDTH = 980
 _HEIGHT = 620
-_COL_WIDTHS = {0: 52, 1: 88, 3: 76, 4: 96}  # column 2 (Partener) flexes
 
-_TITLE = "anaf-sync"
-_GEOMETRY_KEY = "window/geometry"
+#: Column 2 (Partener) is the stretch section; these four are fixed. The
+#: mockup's px were measured in a browser at 13px, so they are a *floor*: the
+#: real width also has to fit the platform's own font, or a date or a total
+#: would render clipped on a machine with wider metrics.
+_COL_CONTENT = {0: 84, 1: 88, 3: 76, 4: 96}
+#: The widest value each fixed column has to hold, for that metrics check.
+_COL_SAMPLES = {0: "00.00.0000", 1: "2026-071345", 3: "trimisă", 4: "99.999,99 RON"}
+_LAST_COL = 4
+#: Qt's header minimum is global, not per-section — one floor for all of them.
+_MIN_SECTION = 72
 
-
-def _geometry_settings() -> QSettings:
-    """The platform-native store for window geometry (plist / registry / ini)."""
-    return QSettings("anaf-sync", "tray")
+_TITLE = "Facturi — anaf-sync"
+_SETTINGS_BUTTON = "⚙  Setări…"
+_GEOMETRY_KEY = "facturi/geometry"
+_HEADER_KEY = "facturi/header"
 
 
 def _problems_chip_text(count: int) -> str:
@@ -74,22 +75,20 @@ def _problems_chip_text(count: int) -> str:
 
 
 class MainWindow(QMainWindow):
-    """The archive browser window (Facturi + Setări)."""
+    """The archive browser window (Facturi)."""
 
-    #: Emitted after Setări writes ``config.toml`` (the tray refreshes on it).
-    config_saved = Signal()
+    #: The user asked for Setări — the tray owns that window and opens it.
+    settings_requested = Signal()
 
     def __init__(
         self,
         *,
         state_path: Path | None = None,
-        config_path: Path | None = None,
         on_retry: Callable[[], None] | None = None,
         now: Callable[[], dt.datetime] | None = None,
     ) -> None:
         super().__init__()
         self._state_path = state_path or default_state_path()
-        self._config_path = config_path or default_config_path()
         self._on_retry = on_retry
         self._now = now or (lambda: dt.datetime.now())  # noqa: DTZ005 — local month
         self._theme: Theme = current_theme()
@@ -102,7 +101,8 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(_TITLE)
         # The design size is the minimum; the layout stretches from there
-        # (DESIGN.md §10). Never a fixed size.
+        # (DESIGN.md §10). Never a fixed size, and no maximum: a catalog can
+        # always use more room — only the Setări form has a ceiling.
         self.setMinimumSize(_WIDTH, _HEIGHT)
 
         self._model = CatalogModel(self._state_path, now=self._utc_now)
@@ -122,13 +122,22 @@ class MainWindow(QMainWindow):
         # restoreGeometry also recovers maximised state and pulls a position
         # remembered on a detached monitor back onto a live screen; a missing
         # or invalid blob leaves the design-size default.
-        blob = _geometry_settings().value(_GEOMETRY_KEY)
+        settings = store.geometry_settings()
+        blob = settings.value(_GEOMETRY_KEY)
         if isinstance(blob, QByteArray):
             self.restoreGeometry(blob)
+        # Column widths are UI state too, and ride in their own key: the user's
+        # chosen proportions should survive a restart like the window size does.
+        header_blob = settings.value(_HEADER_KEY)
+        if isinstance(header_blob, QByteArray) and self._table is not None:
+            self._table.horizontalHeader().restoreState(header_blob)
 
     def save_geometry_to_settings(self) -> None:
-        """Persist the current geometry (also called by the tray on quit)."""
-        _geometry_settings().setValue(_GEOMETRY_KEY, self.saveGeometry())
+        """Persist geometry + header layout (also called by the tray on quit)."""
+        settings = store.geometry_settings()
+        settings.setValue(_GEOMETRY_KEY, self.saveGeometry())
+        if self._table is not None:
+            settings.setValue(_HEADER_KEY, self._table.horizontalHeader().saveState())
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.save_geometry_to_settings()
@@ -141,65 +150,7 @@ class MainWindow(QMainWindow):
 
     def _build(self) -> None:
         central = QWidget()
-        outer = QVBoxLayout(central)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-        outer.addWidget(self._build_titlebar())
-
-        body = QWidget()
-        body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
-        body_layout.addWidget(self._build_sidebar())
-
-        self._stack = QStackedWidget()
-        self._stack.addWidget(self._build_facturi())
-        self._stack.addWidget(self._build_settings())
-        body_layout.addWidget(self._stack, 1)
-
-        outer.addWidget(body, 1)
-        self.setCentralWidget(central)
-
-    def _build_titlebar(self) -> QWidget:
-        bar = QWidget()
-        bar.setObjectName("titlebar")
-        bar.setFixedHeight(38)
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self._title_label = QLabel(_TITLE)
-        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._title_label)
-        return bar
-
-    def _build_sidebar(self) -> QWidget:
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(148)
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(10, 12, 10, 12)
-        layout.setSpacing(4)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        self._nav_group = QButtonGroup(self)
-        self._nav_invoices = self._nav_button("Facturi", 0)
-        self._nav_settings = self._nav_button("Setări", 1)
-        self._nav_invoices.setChecked(True)
-        layout.addWidget(self._nav_invoices)
-        layout.addWidget(self._nav_settings)
-        return sidebar
-
-    def _nav_button(self, text: str, page: int) -> QToolButton:
-        button = QToolButton()
-        button.setText(text)
-        button.setCheckable(True)
-        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        button.clicked.connect(lambda: self._stack.setCurrentIndex(page))
-        self._nav_group.addButton(button)
-        return button
-
-    def _build_facturi(self) -> QWidget:
-        page = QWidget()
-        layout = QHBoxLayout(page)
+        layout = QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -210,12 +161,24 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self._build_toolbar())
         left_layout.addWidget(self._build_period_row())
         left_layout.addWidget(self._build_table(), 1)
-        self._footer = QLabel()
-        self._footer.setObjectName("footer")
-        left_layout.addWidget(self._footer)
+        left_layout.addWidget(self._build_footer())
+
         layout.addWidget(left, 1)
         layout.addWidget(self._details)
-        return page
+        self.setCentralWidget(central)
+
+    def _build_footer(self) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._footer = QLabel()
+        self._footer.setObjectName("footer")
+        hint = QLabel("lista se încarcă pe măsură ce derulați")
+        hint.setObjectName("footer")
+        layout.addWidget(self._footer)
+        layout.addStretch(1)
+        layout.addWidget(hint)
+        return row
 
     def _build_toolbar(self) -> QWidget:
         bar = QWidget()
@@ -247,6 +210,18 @@ class MainWindow(QMainWindow):
         ):
             self._filter_group.addButton(chip)
             layout.addWidget(chip)
+
+        separator = QFrame()
+        separator.setObjectName("toolbarSeparator")
+        separator.setFrameShape(QFrame.Shape.VLine)
+        layout.addWidget(separator)
+
+        self._settings_button = QToolButton()
+        self._settings_button.setObjectName("settingsButton")
+        self._settings_button.setText(_SETTINGS_BUTTON)
+        self._settings_button.setToolTip("Deschide fereastra Setări")
+        self._settings_button.clicked.connect(self.settings_requested)
+        layout.addWidget(self._settings_button)
         return bar
 
     def _build_period_row(self) -> QWidget:
@@ -272,7 +247,7 @@ class MainWindow(QMainWindow):
         self._date_to = QDateEdit()
         for edit in (self._date_from, self._date_to):
             edit.setDisplayFormat("dd.MM.yyyy")
-            edit.setFixedWidth(112)
+            edit.setFixedWidth(96)
             edit.setVisible(False)
             edit.dateChanged.connect(self._on_date_edit)
         layout.addWidget(self._date_from)
@@ -296,31 +271,20 @@ class MainWindow(QMainWindow):
         table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         table.setMouseTracking(True)
         header = table.horizontalHeader()
+        header.setMinimumSectionSize(_MIN_SECTION)
+        # Partener stretches; the other four are Interactive, so dragging a
+        # header boundary re-proportions exactly one of them and Partener
+        # absorbs the difference — the table can never exceed its viewport.
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        for col, width in _COL_WIDTHS.items():
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
-            table.setColumnWidth(col, width)
+        metrics = table.fontMetrics()
+        for col in _COL_CONTENT:
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            table.setColumnWidth(col, _section_width(metrics, col))
         table.selectionModel().currentRowChanged.connect(self._on_row_changed)
         self._model.modelReset.connect(self._update_footer)
         self._model.rowsInserted.connect(lambda *_: self._update_footer())
         self._table = table
         return table
-
-    def _build_settings(self) -> QWidget:
-        self._settings = SettingsView(
-            state_path=self._state_path, config_path=self._config_path
-        )
-        self._settings.saved.connect(self._on_config_saved)
-        return self._settings
-
-    def _on_config_saved(self) -> None:
-        self.refresh()
-        self.config_saved.emit()
-
-    def show_settings(self) -> None:
-        """Switch to the Setări page (used by the tray's Setări… item)."""
-        self._nav_settings.setChecked(True)
-        self._stack.setCurrentIndex(1)
 
     def _chip(self, text: str) -> QToolButton:
         chip = QToolButton()
@@ -383,10 +347,7 @@ class MainWindow(QMainWindow):
 
     def _update_footer(self) -> None:
         shown, total = self._model.shown_count(), self._model.total_count()
-        self._footer.setText(
-            f"{shown} afișate · {total} în arhivă · "
-            "lista se încarcă pe măsură ce derulați"
-        )
+        self._footer.setText(f"{shown} afișate · {total} în arhivă")
         self._chip_problems.setText(_problems_chip_text(self._model.problem_count()))
 
     # -- selection + actions --------------------------------------------------
@@ -412,7 +373,6 @@ class MainWindow(QMainWindow):
         self._delegate.set_theme(theme)
         self._details.set_theme(theme)
         self._calendar.set_theme(theme)
-        self._settings.set_theme(theme)
         if self._table is not None:
             self._table.viewport().update()
 
@@ -420,6 +380,15 @@ class MainWindow(QMainWindow):
         """Re-read the archive (called when the tray detects a state change)."""
         self._model.reload()
         self._update_footer()
+
+
+def _section_width(metrics: QFontMetrics, col: int) -> int:
+    """The mockup's content width, floored by what the real font needs, plus
+    the padding the delegate insets on that column."""
+    content = max(_COL_CONTENT[col], metrics.horizontalAdvance(_COL_SAMPLES[col]))
+    left = PAD_EDGE if col == 0 else PAD_X
+    right = PAD_EDGE if col == _LAST_COL else PAD_X
+    return content + left + right
 
 
 def _qdate_to_date(qdate: QDate) -> dt.date:
@@ -446,23 +415,27 @@ def reveal_in_file_manager(path: Path) -> None:
 
 def _window_stylesheet(theme: Theme) -> str:
     return window_qss(theme) + f"""
-#titlebar {{ background-color:{theme.panel_bg};
-    border-bottom:1px solid {theme.border}; }}
-#titlebar QLabel {{ color:{theme.muted}; }}
-#sidebar {{ background-color:{theme.window_bg};
-    border-right:1px solid {theme.border}; }}
 #footer {{ color:{theme.faint}; font-size:11px; }}
+#toolbarSeparator {{ color:{theme.border}; }}
 QToolButton {{ background-color:{theme.window_bg}; color:{theme.muted};
     border:1px solid {theme.border}; border-radius:9px; padding:4px 10px; }}
 QToolButton:checked {{ background-color:{theme.accent}; color:{theme.on_accent};
     border-color:{theme.accent}; }}
+/* Not a filter chip: it never latches, so it must not read as "off". */
+#settingsButton {{ border-radius:6px; }}
+#settingsButton:hover {{ background-color:{theme.row_hover};
+    color:{theme.text}; }}
 QLineEdit {{ background-color:{theme.window_bg}; color:{theme.text};
     border:1px solid {theme.border}; border-radius:6px; padding:5px 8px; }}
 QTableView {{ background-color:{theme.panel_bg}; color:{theme.text};
     border:1px solid {theme.border}; gridline-color:{theme.border};
     selection-background-color:{theme.row_selected};
     selection-color:{theme.text}; }}
+/* Padding mirrors the delegate's so headers sit over their own columns. */
 QHeaderView::section {{ background-color:{theme.panel_bg}; color:{theme.faint};
     border:none; border-bottom:1px solid {theme.border};
-    padding:6px 14px; text-transform:uppercase; }}
+    border-right:1px solid {theme.border};
+    padding:6px 4px; text-transform:uppercase; }}
+QHeaderView::section:first {{ padding-left:14px; }}
+QHeaderView::section:last {{ padding-right:14px; border-right:none; }}
 """

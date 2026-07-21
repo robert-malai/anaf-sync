@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QModelIndex, Qt  # noqa: E402
+from PySide6.QtWidgets import QHeaderView, QStackedWidget  # noqa: E402
 from sample_data import seed_sample_archive  # noqa: E402
 
 from anaf_sync.state import Archive, CatalogEntry  # noqa: E402
@@ -199,7 +200,7 @@ def test_month_end() -> None:
 
 def test_window_footer_and_problem_chip(qtbot: object, tmp_path: Path) -> None:
     seed_sample_archive(tmp_path / "state.db")
-    win = MainWindow(state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml")
+    win = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(win)
     assert "în arhivă" in win._footer.text()
     assert win._chip_problems.text() == "Probleme (2)"
@@ -207,7 +208,7 @@ def test_window_footer_and_problem_chip(qtbot: object, tmp_path: Path) -> None:
 
 def test_window_selection_updates_details(qtbot: object, tmp_path: Path) -> None:
     seed_sample_archive(tmp_path / "state.db")
-    win = MainWindow(state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml")
+    win = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(win)
     # Select the FCT-2107 catalog row (row 1, after the pinned failing row).
     win._table.selectRow(1)
@@ -217,7 +218,7 @@ def test_window_selection_updates_details(qtbot: object, tmp_path: Path) -> None
 
 def test_window_direction_chip_filters(qtbot: object, tmp_path: Path) -> None:
     seed_sample_archive(tmp_path / "state.db")
-    win = MainWindow(state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml")
+    win = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(win)
     win._chip_received.click()
     ids = _ids(win._model)
@@ -229,7 +230,7 @@ def test_window_direction_chip_filters(qtbot: object, tmp_path: Path) -> None:
 
 
 def test_window_design_size_is_the_minimum(qtbot: object, tmp_path: Path) -> None:
-    win = MainWindow(state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml")
+    win = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(win)
     assert (win.minimumWidth(), win.minimumHeight()) == (980, 620)
     win.resize(1400, 900)  # a fixed-size window would refuse this
@@ -240,16 +241,12 @@ def test_window_geometry_persists_across_instances(
     qtbot: object, tmp_path: Path
 ) -> None:
     # QSettings is redirected to a throwaway ini dir by conftest.
-    first = MainWindow(
-        state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml"
-    )
+    first = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(first)
     first.resize(1000, 700)
     first.close()  # closeEvent saves the geometry
 
-    second = MainWindow(
-        state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml"
-    )
+    second = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(second)
     # The offscreen test screen is 800×800 (hardcoded in the Qt plugin) —
     # narrower than the design minimum. Height round-trips through QSettings;
@@ -257,3 +254,72 @@ def test_window_geometry_persists_across_instances(
     # available screen (detached-monitor recovery) and the minimum floors it.
     assert second.height() == 700
     assert second.width() == 980
+
+
+# -- resizable columns ---------------------------------------------------------
+
+
+def test_partener_stretches_and_the_rest_are_user_resizable(
+    qtbot: object, tmp_path: Path
+) -> None:
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+    header = win._table.horizontalHeader()
+    # Partener is the stretch section, so every drag is a zero-sum trade and
+    # the table can never exceed its viewport (DESIGN.md §10).
+    assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.Stretch
+    for col in (0, 1, 3, 4):
+        assert header.sectionResizeMode(col) == QHeaderView.ResizeMode.Interactive
+
+
+def test_data_column_fits_a_full_zz_ll_aaaa_date(qtbot: object, tmp_path: Path) -> None:
+    seed_sample_archive(tmp_path / "state.db")
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+    rendered = win._model.data(win._model.index(1, 0), Qt.ItemDataRole.DisplayRole)
+    assert rendered == "18.07.2026"
+    metrics = win._table.fontMetrics()
+    assert win._table.columnWidth(0) >= metrics.horizontalAdvance(rendered)
+
+
+def test_column_widths_persist_across_instances(qtbot: object, tmp_path: Path) -> None:
+    first = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(first)
+    first._table.setColumnWidth(1, 140)
+    first.close()  # closeEvent saves geometry *and* header layout
+
+    second = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(second)
+    assert second._table.columnWidth(1) == 140
+
+
+# -- the two-window split ------------------------------------------------------
+
+
+def test_settings_button_only_asks_the_tray_to_open_setari(
+    qtbot: object, tmp_path: Path
+) -> None:
+    # Facturi never hosts the form: it has no stack and no nav (DESIGN.md §10).
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+    assert not win.findChildren(QStackedWidget)
+    with qtbot.waitSignal(win.settings_requested, timeout=1000):
+        win._settings_button.click()
+
+
+def test_fixed_columns_fit_their_widest_value_in_the_real_font(
+    qtbot: object, tmp_path: Path
+) -> None:
+    # The handoff's px were measured in a browser at 13px, so they are a floor:
+    # a platform with wider metrics must still not clip a date or a total.
+    from anaf_sync.tray.delegates import PAD_EDGE, PAD_X
+    from anaf_sync.tray.window import _COL_SAMPLES
+
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+    metrics = win._table.fontMetrics()
+    for col, sample in _COL_SAMPLES.items():
+        padding = (PAD_EDGE if col == 0 else PAD_X) + (PAD_EDGE if col == 4 else PAD_X)
+        assert win._table.columnWidth(col) >= (
+            metrics.horizontalAdvance(sample) + padding
+        )

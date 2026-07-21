@@ -8,6 +8,12 @@ authorization inventory is not the source), previews the path template live,
 and on save writes a minimal diff through
 :mod:`config_io`. Colours are in :mod:`theme`; the form never syncs or writes
 anything but ``config.toml``.
+
+The view is hosted by :mod:`settings_window`, which owns the two exits: it
+closes on :attr:`SettingsView.saved` and on :attr:`SettingsView.cancelled`.
+Nothing outside the window depends on pending edits, so cancelling needs no
+confirmation — :meth:`SettingsView.reload` re-reads ``config.toml`` and a
+cancelled session leaves no residue (DESIGN.md §10).
 """
 
 from __future__ import annotations
@@ -23,7 +29,6 @@ from PySide6.QtWidgets import (
     QCompleter,
     QFileDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -43,6 +48,7 @@ from ..scheduling import status as schedule_status
 from ..state import Archive
 from . import config_io
 from . import format as fmt
+from .flowgrid import ArtifactGrid
 from .preview import render_preview
 from .theme import LIGHT, MONO_FONT_FAMILY, Theme
 
@@ -66,12 +72,13 @@ _FREQUENCIES = (
 )
 _DEFAULT_FREQ = 2  # 6 ore
 
-# The content column stops at a reading width; the label column is fixed
-# (DESIGN.md §10, "the layout is elastic"). The form cap is the sum of both
-# plus the margins, so the whole form anchors left inside the scroll area.
+# The label column is fixed and the field column takes all the rest; the
+# window itself carries the ceiling (DESIGN.md §10). Two controls opt out of
+# stretching: a 1-60 slider longer than this reads as a progress bar, and help
+# text is prose, which has a reading width no window size changes.
 _LABEL_WIDTH = 150
-_CONTENT_MAX_WIDTH = 760
-_FORM_MAX_WIDTH = 24 + _LABEL_WIDTH + 12 + _CONTENT_MAX_WIDTH + 24
+_SLIDER_MAX_WIDTH = 480
+_HELP_MAX_WIDTH = 620
 
 _DIR_LABEL = "Dosar arhivă"
 _NEEDS_INIT = "Rulați `anaf-sync init` pentru a crea un config.toml."
@@ -85,7 +92,10 @@ CIF_LAST_REMAINS = "Cel puțin un CIF trebuie să rămână în listă."
 class SettingsView(QWidget):
     """The config editor; emits :attr:`saved` after a successful write."""
 
+    #: Written to ``config.toml``; the window closes on it.
     saved = Signal()
+    #: "Renunță" — discard and close, without touching ``config.toml``.
+    cancelled = Signal()
 
     def __init__(
         self,
@@ -100,6 +110,7 @@ class SettingsView(QWidget):
         self._theme: Theme = LIGHT
         self._cif_buttons: dict[str, QToolButton] = {}
         self._artifact_boxes: dict[str, QCheckBox] = {}
+        self._artifact_cards: dict[str, QFrame] = {}
         self._baseline_form: config_io.SettingsForm | None = None
         self._baseline_frequency = _DEFAULT_FREQ
 
@@ -142,11 +153,10 @@ class SettingsView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # Fields stretch with the window up to a reading width, then anchor
-        # left; the scroll area absorbs the remaining space (DESIGN.md §10).
+        # Fields stretch with the window; the scroll area absorbs the extra
+        # height and its scrollbar disappears once the form fits (DESIGN.md §10).
         scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         form = QWidget()
-        form.setMaximumWidth(_FORM_MAX_WIDTH)
         self._form_layout = QVBoxLayout(form)
         self._form_layout.setContentsMargins(24, 20, 24, 20)
         self._form_layout.setSpacing(24)
@@ -164,6 +174,12 @@ class SettingsView(QWidget):
         self._refresh_preview()
 
     def _section(self, title: str) -> None:
+        if self._form_layout.count():  # a 1px rule between sections, not before
+            rule = QFrame()
+            rule.setObjectName("sectionRule")
+            rule.setFrameShape(QFrame.Shape.HLine)
+            rule.setFixedHeight(1)
+            self._form_layout.addWidget(rule)
         header = QLabel(title.upper())
         header.setObjectName("sectionHeader")
         self._form_layout.addWidget(header)
@@ -231,6 +247,7 @@ class SettingsView(QWidget):
         self._labeled("Direcție", directions)
 
         lookback = QWidget()
+        lookback.setMaximumWidth(_SLIDER_MAX_WIDTH)
         lb_layout = QHBoxLayout(lookback)
         lb_layout.setContentsMargins(0, 0, 0, 0)
         self._lookback = QSlider(Qt.Orientation.Horizontal)
@@ -281,16 +298,15 @@ class SettingsView(QWidget):
         self._labeled("Șablon de denumire", template_box)
 
         cards = QWidget()
-        grid = QGridLayout(cards)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(8)
+        grid = ArtifactGrid(cards)
         configured = {a.value for a in self._config.output.artifacts}
-        for i, name in enumerate(_ARTIFACTS):
+        for name in _ARTIFACTS:
             box = QCheckBox()
             box.setChecked(name in configured)
             box.clicked.connect(self._update_save_enabled)
+            box.clicked.connect(lambda _checked, n=name: self._sync_card(n))
             self._artifact_boxes[name] = box
-            grid.addWidget(self._artifact_card(name, box), i // 3, i % 3)
+            grid.addWidget(self._artifact_card(name, box))
         self._labeled("Fișiere salvate", cards)
 
     def _build_schedule(self) -> None:
@@ -300,7 +316,13 @@ class SettingsView(QWidget):
             self._frequency.addItem(label)
         self._frequency.setCurrentIndex(_DEFAULT_FREQ)
         self._frequency.currentIndexChanged.connect(self._update_save_enabled)
-        self._labeled("Frecvență", self._frequency)
+        # A select is sized by its content, not by the window (DESIGN.md §10).
+        freq_row = QWidget()
+        freq_layout = QHBoxLayout(freq_row)
+        freq_layout.setContentsMargins(0, 0, 0, 0)
+        freq_layout.addWidget(self._frequency)
+        freq_layout.addStretch(1)
+        self._labeled("Frecvență", freq_row)
 
         status = schedule_status()
         active = status != "not installed"
@@ -308,7 +330,7 @@ class SettingsView(QWidget):
         self._schedule_status.setObjectName(
             "scheduleActive" if active else "scheduleInactive"
         )
-        self._form_layout.addWidget(self._schedule_status)
+        self._labeled("", self._schedule_status)
 
     def _build_save_bar(self) -> QWidget:
         bar = QWidget()
@@ -322,9 +344,11 @@ class SettingsView(QWidget):
         layout.addWidget(note)
         layout.addStretch(1)
         cancel = QPushButton("Renunță")
-        cancel.clicked.connect(self._reset)
+        cancel.setToolTip("Închide fereastra fără să salveze (Esc)")
+        cancel.clicked.connect(self.cancelled)
         self._save_button = QPushButton("Salvează modificările")
         self._save_button.setObjectName("savePrimary")
+        self._save_button.setToolTip("Scrie config.toml și închide fereastra")
         self._save_button.clicked.connect(self._save)
         layout.addWidget(cancel)
         layout.addWidget(self._save_button)
@@ -351,13 +375,22 @@ class SettingsView(QWidget):
             hint = QLabel(help_text)
             hint.setObjectName("help")
             hint.setWordWrap(True)
+            hint.setMaximumWidth(_HELP_MAX_WIDTH)
             holder_layout.addWidget(hint)
         layout.addWidget(holder, 1)
         self._form_layout.addWidget(row)
 
+    def _sync_card(self, name: str) -> None:
+        """Repaint a card for its checkbox — checked reads accent, per the mockup."""
+        card = self._artifact_cards[name]
+        card.setProperty("checked", self._artifact_boxes[name].isChecked())
+        self._restyle(card)
+
     def _artifact_card(self, name: str, box: QCheckBox) -> QWidget:
         card = QFrame()
         card.setObjectName("artifactCard")
+        card.setProperty("checked", box.isChecked())
+        self._artifact_cards[name] = card
         layout = QHBoxLayout(card)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.addWidget(box)
@@ -507,8 +540,12 @@ class SettingsView(QWidget):
         except ScheduleError:
             pass  # a failed re-schedule must not lose the saved config
 
-    def _reset(self) -> None:
-        # Rebuild the form from the on-disk config, discarding edits.
+    def reload(self) -> None:
+        """Rebuild the form from ``config.toml``, discarding any pending edits.
+
+        The window calls this every time it opens, so a cancelled session can
+        never leak into the next one.
+        """
         layout = self.layout()
         if layout is not None:
             while layout.count():
@@ -520,6 +557,7 @@ class SettingsView(QWidget):
                     widget.deleteLater()
         self._cif_buttons.clear()
         self._artifact_boxes.clear()
+        self._artifact_cards.clear()
         self._baseline_form = None
         self._config = self._load_config()
         self._build()
@@ -538,7 +576,9 @@ class SettingsView(QWidget):
 def _settings_qss(theme: Theme) -> str:
     return f"""
 QWidget {{ background-color:{theme.window_bg}; color:{theme.text}; }}
-#sectionHeader {{ color:{theme.faint}; font-size:11px; letter-spacing:1px; }}
+#sectionHeader {{ color:{theme.faint}; font-size:11px; letter-spacing:1px;
+    font-weight:700; }}
+#sectionRule {{ background-color:{theme.border}; border:none; }}
 #help {{ color:{theme.faint}; font-size:11px; }}
 QLineEdit[mono="true"], QLabel[mono="true"] {{
     font-family:{MONO_FONT_FAMILY}; }}
@@ -557,7 +597,12 @@ QToolButton {{ background-color:{theme.window_bg}; color:{theme.muted};
 #cifChip {{ background-color:{theme.accent_soft_bg};
     color:{theme.accent}; border-color:{theme.accent}; }}
 #cifError {{ color:{theme.red}; font-size:11px; }}
-#artifactCard {{ border:1px solid {theme.border}; border-radius:6px; }}
+#artifactCard {{ border:1px solid {theme.border}; border-radius:6px;
+    background-color:{theme.panel_bg}; }}
+#artifactCard[checked="true"] {{ border-color:{theme.accent};
+    background-color:{theme.accent_soft_bg}; }}
+/* The blanket QWidget background above would otherwise paint over the card. */
+#artifactCard QLabel, #artifactCard QCheckBox {{ background:transparent; }}
 #saveBar {{ background-color:{theme.window_bg};
     border-top:1px solid {theme.border}; }}
 #saveNote {{ color:{theme.faint}; font-size:11px; }}

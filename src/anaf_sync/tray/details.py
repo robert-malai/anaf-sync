@@ -227,8 +227,15 @@ class DetailsPane(QWidget):
             reveal_btn.setEnabled(False)
             reveal_btn.setToolTip(_FILE_MISSING_TOOLTIP)
 
+        # Side by side, as in the mockup — stacking them would push the
+        # provenance block below the fold on a short window.
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
         for btn in (open_btn, reveal_btn):
-            self._layout.addWidget(btn)
+            layout.addWidget(btn, 1)
+        self._layout.addWidget(row)
 
     def _add_provenance(
         self,

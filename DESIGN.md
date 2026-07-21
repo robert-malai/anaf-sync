@@ -303,43 +303,125 @@ The companion is deliberately not a second way to *do* anything — it observes,
 it configures, and it delegates every mutation to the CLI. That keeps the
 archive's correctness properties (§3) entirely in one place.
 
-**The layout is elastic; the design size is the minimum.** The window resizes
-freely and every view follows its bounding box; 980×620 — the size the views
-were designed at — is the *minimum*, not the size. All of it is expressed
-through Qt layout stretch factors and size policies, never absolute geometry
-or `resizeEvent` math, so one rule set holds at every size. The rules assign
-each element one of two roles:
+**Two windows, not one stack.** Facturi and Setări are separate top-level
+windows rather than pages of a sidebar-switched stack. The split follows from
+what each one is: the catalog is a surface the user leaves open and glances at,
+while Setări is a bounded editing task with an explicit commit boundary —
+*Salvează modificările* writes `config.toml`, *Renunță* (and Esc, and the
+window's close button, all one reject slot) discards. Inside a single window
+those two verbs had no honest target. Cancelling a form the user reached by
+clicking a nav item either strands them on a reverted page or silently throws
+them back to a list they never asked for; and a save bar pinned under a stack
+implies the whole window is unsaved, which the catalog half never is. As
+separate windows the answer is the one every desktop already teaches: the
+editor closes and the thing behind it is still there. Nothing outside the
+Setări window depends on its pending state, so closing with unsaved edits needs
+no confirmation prompt — reopening re-reads `config.toml` and a cancelled
+session leaves no residue. Setări opens from the tray's *Setări…* item and from
+a toolbar button in Facturi, and carries its own geometry key and its own,
+smaller size range — 760×620 to 1200×780, against the catalog's 980×620
+minimum and no maximum at all — because the two have opposite appetites for
+space, which the next paragraphs make precise.
 
-- *Anchored* (fixed on at least one axis): the title bar spans full width at
-  fixed height; the sidebar keeps its fixed width and stretches vertically;
-  the details pane keeps its fixed width against the right edge (it is a
-  reading pane — widening it would only stretch line lengths); toolbar,
-  period row, footer and save bar are full-width, fixed-height bands whose
-  buttons/chips keep their natural size.
-- *Stretching* (absorbs the slack): exactly one element per page takes both
+**The layout is elastic; the design size is the minimum.** Each window resizes
+freely and follows its bounding box; the size it was designed at is the
+*minimum*, not the size (Setări also has a maximum — below). All of it is expressed through Qt layout stretch
+factors and size policies, never absolute geometry or `resizeEvent` math, so
+one rule set holds at every size. The rules assign each element one of two
+roles:
+
+- *Anchored* (fixed on at least one axis): the details pane keeps its fixed
+  width against the right edge (it is a reading pane — widening it would only
+  stretch line lengths); toolbar, period row, footer and save bar are
+  full-width, fixed-height bands whose buttons/chips keep their natural size.
+- *Stretching* (absorbs the slack): exactly one element per window takes both
   extra axes. On Facturi it is the catalog table — extra height shows more
-  rows, extra width feeds the Partener column, the only non-fixed column (the
+  rows, extra width feeds the Partener column, the only stretch section (the
   rest are dates, sums, statuses of known width). Inside the toolbar the
   search field is likewise the one horizontal absorber. On Setări the scroll
-  area takes the extra height (its scrollbar disappearing once the form
-  fits); inputs stretch horizontally within the form, whose content column is
-  capped at a comfortable reading width (~760px) and left-anchored beside the
-  fixed 150px label column — a path-template field spanning a maximised 4K
-  window helps nobody.
+  area takes the extra height (its scrollbar disappearing once the form fits)
+  and the field column takes the extra width beside the fixed 150px label
+  column.
+
+**Setări has a maximum size; Facturi does not.** The catalog is unbounded — more
+width and height are always more invoices and longer partner names, so the only
+ceiling is the screen. A configuration form is the opposite: it holds a fixed
+amount of content, and past the point where all of it is visible without
+scrolling, every additional pixel is empty space with a save bar stranded at the
+bottom of it. So Setări is clamped (`setMaximumSize`) at 1200×780. The height is
+derived, not chosen: 780 is where the form stops scrolling at its *narrowest*
+allowed width, which makes the promise simple — at maximum height nothing
+scrolls, whatever the width. The width is derived too, from the widest thing
+the form has to lay out: five artifact cards on one row (below), which also
+leaves a default-length path template and its rendered preview each on a single
+line.
+
+Within that range the fields genuinely use the space rather than sitting at a
+fixed cap: the archive directory row, the template field and its preview each
+span the full field column, and the artifact cards widen with it.
+
+The cards also **re-flow on column count, between exactly two layouts**: 3-up
+(two rows, 3 + 2) and 5-up (one row), switching when the field column can give
+every card ~170px. Four columns are excluded on purpose — five cards in four
+columns strand `metadata` alone on a second row, and 3 + 2 and 5 are the only
+clean partitions of five. The 170px floor is why the switch is worth having at
+all: it fires when the one-row layout is an *improvement*, not as soon as it is
+geometrically possible (at 150px per card the descriptions wrap to three lines
+and 5-up is worse than the 3-up it replaced). This is what sets the maximum
+width: 1100 only just fits five cards, 1200 makes them legible at ~191px with
+every description but `metadata` on one line. The grid always fills the field
+column — a per-card maximum width would leave a ragged right edge mid-range,
+breaking the alignment with the full-width fields directly above it. In Qt this
+is a small `QLayout` subclass, not `resizeEvent` arithmetic, so it stays inside
+the rule the elastic layout is built on.
+
+Two controls deliberately opt out of stretching. The `lookback_days` slider caps at 480px: 60 steps stretched across 900px
+is pixel-hunting, and a slider that long reads as a progress bar. Help text caps
+at 620px because it is prose, and prose has a reading width no window size
+changes. Radios, the frequency select and the directory-picker button keep their
+natural size, as controls sized to their content should.
+
+**The user re-proportions the table; the layout still holds.** The four
+narrow columns are `Interactive` sections and Partener stays `Stretch`, so
+dragging any header boundary moves that one boundary and Partener absorbs the
+difference — the table can never be dragged wider than its viewport or leave a
+gap at the right edge, and the elastic rule above survives untouched. Which
+columns deserve the space is a judgement only the user can make (a shop whose
+partners have long legal names wants Partener wide; someone reconciling by
+invoice number wants Număr wide), and it is cheap to offer precisely because
+the stretch section makes every drag a zero-sum trade. Section sizes are UI
+state and persist with the geometry, below.
 
 Window geometry persists across launches through `QSettings` (an `anaf-sync`
 / `tray` scope in the platform-native store — plist, registry, ini),
 deliberately *not* `config.toml`: geometry is UI state, not sync
 configuration, and a file the design promises to round-trip only on explicit
-saves must not churn on every resize. The window is created lazily and hidden
-on close, so within one tray session the size survives for free; across
-launches it is Qt's blessed pair — `saveGeometry()` in `closeEvent` (and on
-quit) and `restoreGeometry()` at construction — which also encodes maximised
-state and pulls a remembered position back onto a screen that still exists
-when monitors have detached. A missing or invalid blob falls back to the
-980×620 design size, and the minimum size holds regardless of what was
-stored. Tests point `QSettings` at a throwaway ini file so the suite never
-touches the real per-user store.
+saves must not churn on every resize. Each window owns a separate key — they
+are separate windows with different natural sizes, and remembering one at the
+other's dimensions would be a bug, not a convenience — and the table's header
+layout rides along in a third (`QHeaderView.saveState()`), for the same reason
+and by the same rule. Windows are created lazily and hidden on close, so within
+one tray session sizes survive for free; across launches it is Qt's blessed
+pair — `saveGeometry()` in `closeEvent` (and on quit) and `restoreGeometry()`
+at construction — which also encodes maximised state and pulls a remembered
+position back onto a screen that still exists when monitors have detached. A
+missing or invalid blob falls back to that window's design size, and its
+minimum size holds regardless of what was stored. Tests point `QSettings` at a
+throwaway ini file so the suite never touches the real per-user store.
+
+**Dates read the way Romanians write them: `zz.ll.aaaa`.** Every operator-facing
+date in the companion — the catalog's Data column, the details pane, the delay
+and failure panels, the custom-period fields (`QDateEdit` with
+`displayFormat("dd.MM.yyyy")`) — renders as `18.07.2026`. The abbreviated form
+the design started from, `18 iul.`, is shorter but drops the year in an archive
+that spans them: two rows twelve months apart read identically, and the 60-day
+window that makes a date urgent is invisible without it. The numeric form is
+also what makes the tabular numerals worth having — every date the same width,
+digits aligned in a column, sortable by eye. ISO stays strictly internal: it is
+what SQLite stores and orders by, and `{issue_date:%Y-%m-%d}` inside the path
+template is a *filename* convention chosen so directory listings sort
+chronologically (§4) — a sort key and a display format are different things,
+and the UI never borrows one for the other.
 
 **Config edits are round-trips, not rewrites.** The Setări form edits
 `config.toml` through tomlkit: it mutates only the keys the user changed and

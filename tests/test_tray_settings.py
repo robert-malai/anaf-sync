@@ -69,7 +69,22 @@ def test_each_modification_enables_save(
     assert view._save_button.isEnabled()
 
 
-def test_cancel_reloads_file_without_hiding_settings(
+def test_cancel_emits_rather_than_resetting_in_place(
+    qtbot: object, tmp_path: Path
+) -> None:
+    # The window owns the exit: Renunță only announces it (DESIGN.md §10).
+    view = _view(tmp_path)
+    qtbot.addWidget(view)
+    view.show()
+    view._lookback.setValue(30)
+
+    with qtbot.waitSignal(view.cancelled, timeout=1000):
+        qtbot.mouseClick(_button(view, "Renunță"), Qt.MouseButton.LeftButton)
+
+    assert view._lookback.value() == 30  # untouched — the window will discard it
+
+
+def test_reload_rereads_the_file_and_drops_pending_edits(
     qtbot: object, tmp_path: Path
 ) -> None:
     view = _view(tmp_path)
@@ -85,13 +100,12 @@ def test_cancel_reloads_file_without_hiding_settings(
         encoding="utf-8",
     )
 
-    qtbot.mouseClick(_button(view, "Renunță"), Qt.MouseButton.LeftButton)
+    view.reload()
 
     assert view.layout() is not None
     assert view.layout().count() == 2
-    assert view._lookback.value() == 45
+    assert view._lookback.value() == 45  # from disk, not the pending 30
     qtbot.waitUntil(lambda: view._lookback.isVisible())
-    assert view._lookback.isVisible()
     assert not view._save_button.isEnabled()
 
 
@@ -166,3 +180,29 @@ def test_save_writes_minimal_diff(qtbot: object, tmp_path: Path) -> None:
     assert updated == original.replace("lookback_days = 60", "lookback_days = 30")
     assert load_config(config).lookback_days == 30
     assert not view._save_button.isEnabled()
+
+
+def test_artifact_card_tracks_its_checkbox(qtbot: object, tmp_path: Path) -> None:
+    # A checked card reads accent (border + soft fill); QSS keys off the property.
+    view = _view(tmp_path)
+    qtbot.addWidget(view)
+    assert view._artifact_cards["zip"].property("checked") is True
+    assert view._artifact_cards["xml"].property("checked") is False
+
+    view._artifact_boxes["xml"].click()
+    assert view._artifact_cards["xml"].property("checked") is True
+
+
+def test_sections_are_separated_by_a_rule_but_not_preceded_by_one(
+    qtbot: object, tmp_path: Path
+) -> None:
+    from PySide6.QtWidgets import QFrame
+
+    view = _view(tmp_path)
+    qtbot.addWidget(view)
+    rules = [
+        frame
+        for frame in view.findChildren(QFrame)
+        if frame.objectName() == "sectionRule"
+    ]
+    assert len(rules) == 2  # three sections → two rules between them

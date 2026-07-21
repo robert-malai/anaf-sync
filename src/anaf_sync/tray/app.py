@@ -2,9 +2,11 @@
 
 ``run`` is the real entry point (the package ``__init__`` guards the PySide6
 import and delegates here). It is a single-instance, menu-bar-only app that
-observes ``state.db`` and offers to spawn a sync — no window yet (that arrives
-in M2). All display logic lives in the pure :mod:`status` / :mod:`theme`
-modules; this file is the thin Qt assembly over them.
+observes ``state.db`` and offers to spawn a sync. It owns the app's two
+windows — Facturi and Setări are independent top-level windows (DESIGN.md
+§10), both created lazily and hidden on close. All display logic lives in the
+pure :mod:`status` / :mod:`theme` modules; this file is the thin Qt assembly
+over them.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
 from ..config import default_config_path, default_state_path
 from .icons import status_icon
 from .runner import SyncRunner
+from .settings_window import SettingsWindow
 from .status import TrayStatus, load_status
 from .theme import (
     MONO_FONT_FAMILY,
@@ -71,6 +74,7 @@ class TrayApp:
         self._output_dir: Path | None = None
         self._theme: Theme = current_theme()
         self._window: MainWindow | None = None
+        self._settings: SettingsWindow | None = None
 
         self._tray = QSystemTrayIcon()
         self._menu = QMenu()
@@ -219,25 +223,31 @@ class TrayApp:
         self.refresh()
         if self._window is not None:
             self._window.apply_theme(theme)
+        if self._settings is not None:
+            self._settings.set_theme(theme)
 
     def _open_window(self) -> None:
         """Open (or raise) the Facturi window; created lazily, hidden on close."""
         if self._window is None:
             self._window = MainWindow(
                 state_path=self._state_path,
-                config_path=self._config_path,
                 on_retry=self._runner.start,
             )
-            # A config save from Setări refreshes the tray status immediately.
-            self._window.config_saved.connect(self.refresh)
+            self._window.settings_requested.connect(self._open_settings)
         self._window.show()
         self._window.raise_()
         self._window.activateWindow()
 
     def _open_settings(self) -> None:
-        self._open_window()
-        if self._window is not None:
-            self._window.show_settings()
+        """Open (or raise) Setări — its own window, over whatever is showing."""
+        if self._settings is None:
+            self._settings = SettingsWindow(
+                state_path=self._state_path,
+                config_path=self._config_path,
+            )
+            # A config save refreshes the tray status (and the catalog) at once.
+            self._settings.saved.connect(self.refresh)
+        self._settings.open_fresh()
 
     def _open_folder(self) -> None:
         if self._output_dir is None:
@@ -249,6 +259,8 @@ class TrayApp:
         # geometry save has to happen here for an open window.
         if self._window is not None:
             self._window.save_geometry_to_settings()
+        if self._settings is not None:
+            self._settings.save_geometry_to_settings()
         self._watcher.stop()
         self._tray.hide()
         QApplication.quit()

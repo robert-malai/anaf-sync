@@ -28,16 +28,20 @@ def test_money_without_currency_or_value() -> None:
     assert money(None, "RON") == "—"
 
 
-def test_short_date() -> None:
-    assert short_date(dt.date(2026, 7, 18)) == "18 iul."
-    assert short_date(dt.date(2026, 1, 3)) == "3 ian."
+def test_short_date_is_romanian_zz_ll_aaaa() -> None:
+    assert short_date(dt.date(2026, 7, 18)) == "18.07.2026"
+    assert short_date(dt.date(2026, 1, 3)) == "03.01.2026"  # zero-padded, aligns
     assert short_date(None) == "—"
 
 
 def test_archived_at_is_local_and_tabular() -> None:
     when = dt.datetime(2026, 7, 18, 14, 32, tzinfo=dt.UTC)
     rendered = archived_at(when)
-    assert "2026" in rendered and ", " in rendered
+    # The date half is the same zz.ll.aaaa as everywhere else; the clock is
+    # local, so only the shape is asserted (the test box may sit anywhere).
+    date_part, _, clock = rendered.partition(", ")
+    assert dt.datetime.strptime(date_part, "%d.%m.%Y")  # noqa: DTZ007 — shape only
+    assert len(clock) == 5 and clock[2] == ":"
     assert archived_at(None) == "—"
 
 
@@ -78,7 +82,7 @@ def test_relative_time_within_week() -> None:
 
 
 def test_relative_time_older_is_short_date() -> None:
-    assert relative_time(dt.datetime(2026, 7, 3, 9, 0), _NOW) == "3 iul."
+    assert relative_time(dt.datetime(2026, 7, 3, 9, 0), _NOW) == "03.07.2026"
 
 
 def test_spv_expiry_phrases() -> None:

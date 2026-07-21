@@ -1,7 +1,9 @@
 """Pure Romanian rendering for the tray — values, pluralisation, phrases.
 
 Money uses the Romanian convention (``.`` thousands, ``,`` decimals, e.g.
-``4.821,50 RON``); dates are the short day-month form (``18 iul.``). The
+``4.821,50 RON``); dates are the Romanian numeric form ``zz.ll.aaaa``
+(``18.07.2026`` — DESIGN.md §10 for why, and for why ISO never leaks into
+the UI). The
 language logic that several views share lives here too — :func:`noun`
 (Romanian pluralisation), :func:`relative_time`, the direction pill labels,
 the SPV-expiry phrase — pure and unit-tested. All remaining copy is inlined
@@ -15,7 +17,6 @@ import datetime as dt
 
 __all__ = [
     "EM_DASH",
-    "MONTHS_ABBR",
     "archived_at",
     "direction_label",
     "money",
@@ -28,22 +29,6 @@ __all__ = [
 
 #: The placeholder for an absent value, matching the handoff's em-dash cells.
 EM_DASH = "—"
-
-#: Abbreviated Romanian month names (``context._RO_MONTHS`` is the full form).
-MONTHS_ABBR = (
-    "ian.",
-    "feb.",
-    "mar.",
-    "apr.",
-    "mai",
-    "iun.",
-    "iul.",
-    "aug.",
-    "sept.",
-    "oct.",
-    "nov.",
-    "dec.",
-)
 
 #: Direction pill labels — shared by the table delegate and the details pane.
 _DIRECTION_LABELS = {
@@ -64,18 +49,17 @@ def money(total: float | None, currency: str | None) -> str:
 
 
 def short_date(value: dt.date | None) -> str:
-    """``18 iul.`` — day + abbreviated Romanian month; ``—`` if absent."""
+    """``18.07.2026`` — the Romanian ``zz.ll.aaaa`` form; ``—`` if absent."""
     if value is None:
         return EM_DASH
-    return f"{value.day} {MONTHS_ABBR[value.month - 1]}"
+    return f"{value:%d.%m.%Y}"
 
 
 def archived_at(value: dt.datetime | None) -> str:
-    """``18 iul. 2026, 14:32`` — tabular timestamp for the provenance block."""
+    """``18.07.2026, 14:32`` — tabular timestamp for the provenance block."""
     if value is None:
         return EM_DASH
-    local = value.astimezone()
-    return f"{local.day} {MONTHS_ABBR[local.month - 1]} {local.year}, {local:%H:%M}"
+    return f"{value.astimezone():%d.%m.%Y, %H:%M}"
 
 
 def provenance(value: str | None) -> str:
@@ -125,7 +109,7 @@ def relative_time(when: dt.datetime, now: dt.datetime) -> str:
         return f"ieri, {when:%H:%M}"
     if day_gap <= 6:
         return f"acum {noun(day_gap, 'zi', 'zile')}"
-    return f"{when.day} {MONTHS_ABBR[when.month - 1]}"
+    return short_date(when.date())
 
 
 def spv_expiry(days_left: int) -> str:

@@ -162,3 +162,59 @@ def test_sync_runner_finished_clears_and_reports(qtbot: object) -> None:
         runner._on_finished(0, None)
     assert blocker.args == [0]
     assert runner.running is False
+
+
+# -- the tray owns two independent windows ------------------------------------
+
+
+def test_settings_opens_its_own_window_without_the_catalog(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anaf_sync.tray import settings_view as sv
+    from anaf_sync.tray.settings_window import SettingsWindow
+
+    monkeypatch.setattr(sv, "schedule_status", lambda: "not installed")
+    app = _app(tmp_path)
+    app._open_settings()
+
+    assert isinstance(app._settings, SettingsWindow)
+    assert app._settings.isVisible()
+    # Setări no longer drags the catalog open behind it — they are unrelated.
+    assert app._window is None
+    app._settings.close()
+
+
+def test_catalog_settings_button_reaches_the_tray(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anaf_sync.tray import settings_view as sv
+
+    monkeypatch.setattr(sv, "schedule_status", lambda: "not installed")
+    app = _app(tmp_path)
+    app._open_window()
+    assert app._window is not None
+
+    app._window._settings_button.click()
+    assert app._settings is not None and app._settings.isVisible()
+    app._settings.close()
+    app._window.close()
+
+
+def test_saving_settings_refreshes_the_tray(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anaf_sync.tray import settings_view as sv
+
+    monkeypatch.setattr(sv, "schedule_status", lambda: "not installed")
+    app = _app(tmp_path)
+    calls: list[int] = []
+    # Patch before the window exists: `saved` binds whatever `refresh` names
+    # at connect time, so patching afterwards would connect the original.
+    monkeypatch.setattr(app, "refresh", lambda: calls.append(1))
+
+    app._open_settings()
+    assert app._settings is not None
+    app._settings._view._lookback.setValue(30)
+    app._settings._view._save()
+
+    assert calls  # the tray status re-reads config.toml straight away

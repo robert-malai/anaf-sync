@@ -23,13 +23,19 @@ from .format import direction_label
 from .models import CatalogModel
 from .theme import LIGHT, RADIUS_PILL, Theme
 
-__all__ = ["CatalogDelegate"]
+__all__ = ["PAD_EDGE", "PAD_X", "CatalogDelegate"]
 
 #: Qt hands delegate methods either index flavour; accept both.
 _Index = QModelIndex | QPersistentModelIndex
 
 _STRIPE_WIDTH = 3
-_PAD_X = 14
+#: The mockup pads the *row* by 14px and separates columns by an 8px gap — not
+#: 14px inside every cell, which would put 28px gutters between columns and
+#: clip a ``zz.ll.aaaa`` date out of its section. Inner cells get half the gap;
+#: the first and last carry the row's outer padding (matched by the header's
+#: ``::section:first`` / ``::section:last`` rules).
+PAD_X = 4
+PAD_EDGE = 14
 
 
 class CatalogDelegate(QStyledItemDelegate):
@@ -56,6 +62,7 @@ class CatalogDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self._paint_background(painter, option, theme)
+        self._paint_row_rule(painter, option, theme)
 
         if col == 3:
             self._paint_pill(painter, option, index, theme)
@@ -80,6 +87,15 @@ class CatalogDelegate(QStyledItemDelegate):
         elif state & QStyle.StateFlag.State_MouseOver:
             painter.fillRect(option.rect, QColor(theme.row_hover))
 
+    def _paint_row_rule(
+        self, painter: QPainter, option: QStyleOptionViewItem, theme: Theme
+    ) -> None:
+        """The 1px rule under every row — the table's only grid line."""
+        rect = option.rect
+        painter.fillRect(
+            rect.left(), rect.bottom(), rect.width(), 1, QColor(theme.border)
+        )
+
     def _paint_text(
         self,
         painter: QPainter,
@@ -96,7 +112,8 @@ class CatalogDelegate(QStyledItemDelegate):
         font = QFont(option.font)
         font.setBold(bold)
         painter.setFont(font)
-        rect = option.rect.adjusted(_PAD_X, 0, -_PAD_X, 0)
+        left, right = _paddings(index)
+        rect = option.rect.adjusted(left, 0, -right, 0)
         align = index.data(Qt.ItemDataRole.TextAlignmentRole)
         flags = (
             int(align)
@@ -125,7 +142,7 @@ class CatalogDelegate(QStyledItemDelegate):
         text_w = metrics.horizontalAdvance(label)
         pill_w = text_w + 16
         pill_h = metrics.height() + 4
-        left = option.rect.left() + _PAD_X
+        left = option.rect.left() + _paddings(index)[0]
         top = option.rect.center().y() - pill_h / 2
         pill = QRectF(left, top, pill_w, pill_h)
 
@@ -162,3 +179,13 @@ class CatalogDelegate(QStyledItemDelegate):
         painter.fillRect(
             stripe.left(), stripe.top(), _STRIPE_WIDTH, stripe.height(), QColor(color)
         )
+
+
+def _paddings(index: _Index) -> tuple[int, int]:
+    """``(left, right)`` for a cell: outer rows pad wide, inner ones half-gap."""
+    model = index.model()
+    last = model.columnCount() - 1 if model is not None else index.column()
+    return (
+        PAD_EDGE if index.column() == 0 else PAD_X,
+        PAD_EDGE if index.column() == last else PAD_X,
+    )
