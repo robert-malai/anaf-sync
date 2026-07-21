@@ -38,7 +38,13 @@ jobs:
           sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3
       - name: Sync (with tray extra)
         run: uv sync --extra tray --group qt
+      # bash on every OS, deliberately: the default Windows shell is PowerShell,
+      # which does not stop on a failing native command and only reports the
+      # LAST exit code — so pytest, ruff and black failures here were silently
+      # discarded and mypy alone gated the Windows bundle. GitHub's bash runs
+      # with `set -eo pipefail`, so the first failure stops the step.
       - name: Gates
+        shell: bash
         run: |
           uv run pytest -q
           uv run ruff check src tests

@@ -186,14 +186,34 @@ def test_the_list_scrolls_only_below_the_reflow_breakpoint(
         assert inner is not None
         return inner.verticalScrollBar().maximum() > 0
 
+    def why(view: SettingsView) -> str:
+        """Everything the scroll decision depends on, for a failure message.
+
+        The reflow depends on the *holder's* width, not the window's, and the
+        two differ by the form chrome plus the panel's own margins — so a bare
+        `assert False` here says nothing about which of them went wrong.
+        """
+        inner = view._template_help.findChild(QScrollArea)
+        assert inner is not None
+        holder = inner.widget()
+        return (
+            f"view={view.width()}x{view.height()} "
+            f"panel={view._template_help.width()} "
+            f"viewport={inner.viewport().width()}x{inner.viewport().height()} "
+            f"holder={holder.width()}x{holder.height()} "
+            f"columns={group_column_count(holder.width())} "
+            f"vmax={inner.verticalScrollBar().maximum()}"
+        )
+
     narrow = _narrowest(build(WIDE_BREAKPOINT))
     # The premise of the narrow case: it is below the reflow breakpoint, so the
     # list is 1-up. If a platform's fonts ever push the minimum past the
     # breakpoint, fail here saying so rather than in a confusing assertion.
     assert narrow < WIDE_BREAKPOINT
 
-    assert not scrolls(build(1200))  # 3-up: every variable visible at once
-    assert scrolls(build(narrow))  # 1-up: 15 rows cannot fit, and should not try
+    wide, tight = build(1200), build(narrow)
+    assert not scrolls(wide), f"3-up should fit: {why(wide)}"  # all 15 at once
+    assert scrolls(tight), f"1-up cannot fit 15 rows: {why(tight)}"
 
 
 def test_panel_defaults_to_collapsed(qtbot: object) -> None:
