@@ -142,6 +142,15 @@ class JournalSocketHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             if self._socket is None:
+                # `socket.AF_UNIX` does not exist on Windows, and the bundle
+                # workflow type-checks this module there. journald is reached
+                # only through `native_handler`, which dispatches to this class
+                # on Linux alone; narrowing on `sys.platform` makes the line
+                # unreachable for mypy on Windows instead of an attr-defined
+                # error. The raise stays inside `emit`'s try, so the handler
+                # keeps its contract of never raising at a call site.
+                if sys.platform == "win32":  # pragma: no cover - Linux-only sink
+                    raise OSError("journald is not available on Windows")
                 self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
             self._socket.sendto(self._payload(record), self._address)
         except Exception:

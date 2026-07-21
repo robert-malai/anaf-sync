@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 import tomlkit
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ..config import SyncConfig
 
@@ -34,6 +34,20 @@ class SettingsForm(BaseModel):
     directory: str
     template: str
     artifacts: list[str]
+
+    @field_validator("directory")
+    @classmethod
+    def _forward_slashes(cls, value: str) -> str:
+        r"""Canonicalise separators so a Windows round-trip stays a no-op.
+
+        The form holds the directory as text, but it arrives as `str(Path(...))`
+        from the parsed config — which is `~\Facturi` on Windows. Left alone
+        that reads as a changed value and rewrites a key the user never touched,
+        breaking the minimal-diff contract :func:`apply` exists to keep. Qt's
+        file dialog returns forward slashes on every platform and pathlib
+        accepts them on Windows, so forward slashes are the canonical form.
+        """
+        return value.replace("\\", "/")
 
 
 def load(path: Path) -> tomlkit.TOMLDocument:

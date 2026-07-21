@@ -274,7 +274,10 @@ class SettingsView(QWidget):
         directory = QWidget()
         dir_layout = QHBoxLayout(directory)
         dir_layout.setContentsMargins(0, 0, 0, 0)
-        self._directory = QLineEdit(str(self._config.output.directory))
+        # as_posix, not str: the field shows the same forward-slash form the
+        # file dialog and config_io.SettingsForm use, so the displayed path
+        # matches what a save would write on Windows too.
+        self._directory = QLineEdit(self._config.output.directory.as_posix())
         self._directory.setReadOnly(True)
         self._directory.setProperty("mono", True)
         self._directory.textChanged.connect(self._update_save_enabled)
