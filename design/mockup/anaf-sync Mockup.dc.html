@@ -96,8 +96,8 @@ a{color:#33658A;}a:hover{color:#264d69;}
 </section>
 
 <section id="1b" style="display:flex;flex-direction:column;gap:16px">
-  <div style="display:flex;align-items:center;gap:10px"><a href="#1b" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1b</a><span style="color:var(--muted);font-size:12px">Fereastra principală — Facturi (rândurile și filtrele sunt clicabile)</span></div>
-  <div data-screen-label="Facturi" style="width:980px;height:620px;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:10px"><a href="#1b" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1b</a><span style="color:var(--muted);font-size:12px">Fereastra principală — Facturi (rândurile și filtrele sunt clicabile · <strong>redimensionabilă</strong>: trageți de colțul din dreapta-jos — tabelul absoarbe spațiul, coloana Partener se lărgește; bara laterală și panoul de detalii rămân ancorate; 980×620 e minimul, iar dimensiunea aleasă se reține între porniri)</span></div>
+  <div data-screen-label="Facturi" style="width:980px;height:620px;min-width:980px;min-height:620px;resize:both;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
     <div style="flex:none;height:38px;display:flex;align-items:center;padding:0 14px;gap:7px;border-bottom:1px solid var(--border);background:var(--panel)">
       <span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span>
       <span style="flex:1;text-align:center;font-size:12px;color:var(--muted);font-weight:500">anaf-sync</span>
@@ -231,8 +231,8 @@ a{color:#33658A;}a:hover{color:#264d69;}
 </section>
 
 <section id="1c" style="display:flex;flex-direction:column;gap:16px">
-  <div style="display:flex;align-items:center;gap:10px"><a href="#1c" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1c</a><span style="color:var(--muted);font-size:12px">Fereastra principală — Setări (șablonul e editabil: scrieți o variabilă greșită pentru starea de eroare)</span></div>
-  <div data-screen-label="Setări" style="width:980px;height:620px;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:10px"><a href="#1c" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1c</a><span style="color:var(--muted);font-size:12px">Fereastra principală — Setări (șablonul e editabil: scrieți o variabilă greșită pentru starea de eroare · CIF-urile se adaugă liber — Enter sau butonul — și se elimină din ×; CIF-urile văzute în arhivă apar ca sugestii · <strong>redimensionabilă</strong>: câmpurile se întind cu fereastra până la o lățime de citit de ~760px, apoi se opresc; bara de salvare rămâne ancorată jos, iar dimensiunea aleasă se reține între porniri)</span></div>
+  <div data-screen-label="Setări" style="width:980px;height:620px;min-width:980px;min-height:620px;resize:both;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
     <div style="flex:none;height:38px;display:flex;align-items:center;padding:0 14px;gap:7px;border-bottom:1px solid var(--border);background:var(--panel)">
       <span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span>
       <span style="flex:1;text-align:center;font-size:12px;color:var(--muted);font-weight:500">anaf-sync</span>
@@ -248,15 +248,21 @@ a{color:#33658A;}a:hover{color:#264d69;}
 
           <div style="display:flex;flex-direction:column;gap:12px">
             <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">Companie</div>
-            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 16px;align-items:center">
+            <div style="display:grid;grid-template-columns:150px minmax(0,760px);gap:12px 16px;align-items:center">
               <div style="color:var(--muted);align-self:start;padding-top:5px">CIF-uri urmărite</div>
               <div style="display:flex;flex-direction:column;gap:4px">
-                <div style="display:flex;gap:6px;flex-wrap:wrap">
-                  <sc-for list="{{cifs}}" as="c" hint-placeholder-count="3">
-                    <div onClick="{{c.pick}}" style="{{c.style}}"><span style="{{c.box}}">{{c.mark}}</span>{{c.cif}}</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  <sc-for list="{{cifs}}" as="c" hint-placeholder-count="2">
+                    <div onClick="{{c.remove}}" title="{{c.title}}" style="display:flex;align-items:center;gap:7px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;font-variant-numeric:tabular-nums;border-radius:6px;padding:4px 10px;cursor:pointer;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent)" style-hover="border-color:var(--red);color:var(--red);background:var(--red-bg)">{{c.cif}}<span style="opacity:.7">×</span></div>
                   </sc-for>
+                  <input type="text" value="{{cifEntry}}" onInput="{{onCifEntry}}" onKeyDown="{{onCifKey}}" placeholder="CIF nou" spellcheck="false" list="cif-sugestii" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);width:90px;box-sizing:border-box;outline-color:var(--accent)">
+                  <datalist id="cif-sugestii"><option value="40118293"></option><option value="18293401"></option></datalist>
+                  <button onClick="{{onCifAdd}}" style="border:1px solid var(--border2);background:var(--panel);color:var(--text);font:inherit;font-size:12px;border-radius:6px;padding:4px 10px;cursor:pointer">+ Adaugă CIF</button>
                 </div>
-                <div style="font-size:11.5px;color:var(--faint)">Lista provine din autentificarea ANAF — cel puțin un CIF rămâne selectat.</div>
+                <sc-if value="{{cifError}}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:11px;color:var(--red)">{{cifErrorText}}</div>
+                </sc-if>
+                <div style="font-size:11.5px;color:var(--faint)">CIF-urile companiilor pentru care se arhivează facturile — doar cifre, fără prefixul RO. Cel puțin unul rămâne în listă.</div>
               </div>
               <div style="color:var(--muted)">Direcție</div>
               <div style="display:flex;gap:16px">
@@ -269,7 +275,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
               <div style="color:var(--muted)">Fereastră de căutare</div>
               <div style="display:flex;flex-direction:column;gap:4px">
                 <div style="display:flex;align-items:center;gap:12px">
-                  <input type="range" min="1" max="60" value="{{lookback}}" onChange="{{onLookback}}" style="flex:1;max-width:280px;accent-color:var(--accent)">
+                  <input type="range" min="1" max="60" value="{{lookback}}" onChange="{{onLookback}}" style="flex:1;accent-color:var(--accent)">
                   <span style="font-weight:600;font-variant-numeric:tabular-nums;width:56px">{{lookbackLabel}}</span>
                 </div>
                 <div style="font-size:11.5px;color:var(--faint)">ANAF păstrează mesajele cel mult 60 de zile.</div>
@@ -281,10 +287,10 @@ a{color:#33658A;}a:hover{color:#264d69;}
 
           <div style="display:flex;flex-direction:column;gap:12px">
             <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">Arhivă</div>
-            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 16px;align-items:start">
+            <div style="display:grid;grid-template-columns:150px minmax(0,760px);gap:12px 16px;align-items:start">
               <div style="color:var(--muted);padding-top:5px">Dosar arhivă</div>
               <div style="display:flex;gap:6px;align-items:center">
-                <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:5px 10px;flex:1;max-width:340px">~/Facturi</span>
+                <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:5px 10px;flex:1">~/Facturi</span>
                 <button onClick="{{noop}}" style="border:1px solid var(--border2);background:var(--panel);color:var(--text);font:inherit;font-size:12px;border-radius:6px;padding:5px 12px;cursor:pointer">Alege…</button>
               </div>
               <div style="color:var(--muted);padding-top:5px">Șablon de denumire</div>
@@ -298,7 +304,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
                 </sc-if>
               </div>
               <div style="color:var(--muted);padding-top:5px">Fișiere salvate</div>
-              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-width:560px">
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
                 <sc-for list="{{arts}}" as="a" hint-placeholder-count="5">
                   <div onClick="{{a.pick}}" style="{{a.style}}">
                     <span style="{{a.box}}">{{a.mark}}</span>
@@ -313,7 +319,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
 
           <div style="display:flex;flex-direction:column;gap:12px">
             <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">Programare</div>
-            <div style="display:grid;grid-template-columns:150px 1fr;gap:12px 16px;align-items:center">
+            <div style="display:grid;grid-template-columns:150px minmax(0,760px);gap:12px 16px;align-items:center">
               <div style="color:var(--muted)">Frecvență</div>
               <div>
                 <select value="{{freq}}" onChange="{{onFreq}}" style="font:inherit;font-size:12.5px;background:var(--win);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text)">
@@ -347,7 +353,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
 }">
 class Component extends DCLogic {
   state = { sel: "m1", filter: "Toate", period: "Luna curentă", from: "2026-07-01", to: "2026-07-20", calOpen: false, calPhase: 0, tpl: null, dirOpt: "Primite", lookback: 60,
-    cifs: { "12345678": true, "87654321": true, "40118293": false },
+    cifs: ["12345678", "87654321"], cifEntry: "", cifError: "",
     arts: { zip: true, pdf: true, xml: false, signature: false, metadata: false },
     freq: "La fiecare 6 ore" };
 
@@ -358,7 +364,6 @@ class Component extends DCLogic {
   renderVals() {
     const GOOD = "{cif}/{direction}/{issue_date:%Y}/{issue_date:%m}/{issue_date:%Y-%m-%d}_{number}_{partner_name}";
     const BAD = GOOD.replace("{number}", "{numer}");
-    const mono = 'ui-monospace,Menlo,Consolas,monospace';
     const invoices = [
       { id: "fail", failing: true, iso: "2026-07-11", data: "11 iul.", numar: "—", partener: "TERMOENERGIA S.R.L.", dir: "eșuată", total: "—" },
       { id: "m1", iso: "2026-07-18", up: "2026-07-18", data: "18 iul.", numar: "FCT-2107", partener: "ELECTROMONTAJ CARPAȚI S.R.L.", dir: "primită", total: "4.821,50 RON", cif: "14338501", emisa: "18 iul. 2026", incarcata: "18 iul. 2026", msg: "3216489021", tip: "FACTURA PRIMITA", arhivat: "18 iul., 06:04", path: "~/Facturi/12345678/received/2026/07/2026-07-18_FCT-2107_ELECTROMONTAJ CARPAȚI S.R.L." },
@@ -471,17 +476,23 @@ class Component extends DCLogic {
       ? "Emisă " + sel.emisa.replace(" 2026", "") + " · încărcată în SPV " + sel.incarcata.replace(" 2026", "") + " — după " + delayOf(sel) + " zile (limita: " + delayLimit + " zile)"
       : "";
 
-    // CIF multiselect — the available list is fixed by the ANAF login
-    const cifs = Object.keys(this.state.cifs).map((cif) => {
-      const on = this.state.cifs[cif];
-      const selCount = Object.values(this.state.cifs).filter(Boolean).length;
-      return {
-        cif, mark: on ? "✓" : "",
-        pick: () => { if (on && selCount === 1) return; this.setState((s) => ({ cifs: { ...s.cifs, [cif]: !s.cifs[cif] } })); },
-        style: { display: "flex", alignItems: "center", gap: "7px", fontFamily: mono, fontSize: "12px", fontVariantNumeric: "tabular-nums", borderRadius: "6px", padding: "4px 10px 4px 7px", cursor: "pointer", border: on ? "1px solid var(--accent)" : "1px solid var(--border)", background: on ? "var(--accent-soft)" : "var(--panel)", color: on ? "var(--text)" : "var(--muted)" },
-        box: { flex: "none", width: "13px", height: "13px", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700, border: on ? "1px solid var(--accent)" : "1px solid var(--border2)", background: on ? "var(--accent)" : "var(--panel)", color: "var(--on-accent)" },
-      };
-    });
+    // CIF chips — free entry, validated exactly like config.py; a chip's ×
+    // removes it, the last one refuses (config.py requires at least one)
+    const cifs = this.state.cifs.map((cif) => ({
+      cif,
+      title: "Elimină " + cif,
+      remove: () => {
+        if (this.state.cifs.length === 1) { this.setState({ cifError: "Cel puțin un CIF trebuie să rămână în listă." }); return; }
+        this.setState((s) => ({ cifs: s.cifs.filter((c) => c !== cif), cifError: "" }));
+      },
+    }));
+    const addCif = () => {
+      let v = this.state.cifEntry.trim().toUpperCase();
+      if (v.startsWith("RO")) v = v.slice(2);
+      if (!v || !/^[0-9]+$/.test(v)) { this.setState({ cifError: "CIF invalid — folosește doar cifre, fără prefixul RO." }); return; }
+      if (this.state.cifs.includes(v)) { this.setState({ cifError: "CIF-ul este deja în listă." }); return; }
+      this.setState((s) => ({ cifs: [...s.cifs, v], cifEntry: "", cifError: "" }));
+    };
     // Settings — direction radios
     const dirOpts = ["Primite", "Trimise", "Ambele"].map((label) => {
       const on = this.state.dirOpt === label;
@@ -543,6 +554,11 @@ class Component extends DCLogic {
       selFailing: sel.failing === true, selNormal: !sel.failing,
       selLate, selLateText,
       dirOpts, arts, cifs,
+      cifEntry: this.state.cifEntry,
+      onCifEntry: (e) => this.setState({ cifEntry: e.target.value }),
+      onCifKey: (e) => { if (e.key === "Enter") addCif(); },
+      onCifAdd: addCif,
+      cifError: !!this.state.cifError, cifErrorText: this.state.cifError,
       lookback: this.state.lookback,
       lookbackLabel: this.state.lookback + " zile",
       onLookback: (e) => this.setState({ lookback: Number(e.target.value) }),

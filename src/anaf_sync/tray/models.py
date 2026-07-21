@@ -31,7 +31,6 @@ from ..health import (
     upload_delay_days,
 )
 from ..state import Archive, CatalogEntry, FailureRecord
-from . import strings
 from .format import EM_DASH, money, short_date
 
 __all__ = ["CatalogFilters", "CatalogModel", "FailureRow"]
@@ -77,13 +76,7 @@ class CatalogModel(QAbstractTableModel):
     DirectionRole = int(Qt.ItemDataRole.UserRole) + 4
     DateRole = int(Qt.ItemDataRole.UserRole) + 5
 
-    _COLUMNS = (
-        strings.COL_DATE,
-        strings.COL_NUMBER,
-        strings.COL_PARTNER,
-        strings.COL_DIRECTION,
-        strings.COL_TOTAL,
-    )
+    _COLUMNS = ("Data", "Număr", "Partener", "Direcție", "Total")
 
     def __init__(
         self,

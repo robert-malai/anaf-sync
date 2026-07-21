@@ -5,7 +5,7 @@ from pathlib import Path
 
 from anaf_sync.config import write_default_config
 from anaf_sync.state import Archive, CatalogEntry, RunRecord
-from anaf_sync.tray import strings
+from anaf_sync.tray import status as tray_status
 from anaf_sync.tray.status import load_status
 
 _NOW = dt.datetime(2026, 7, 20, 12, 0, tzinfo=dt.UTC)
@@ -42,7 +42,7 @@ def test_ok_state_with_valid_config_and_recent_run(tmp_path: Path) -> None:
         state_path=_state(tmp_path), config_path=_config(tmp_path), now=_NOW
     )
     assert status.state == "ok"
-    assert status.headline == strings.ARCHIVE_UP_TO_DATE
+    assert status.headline == tray_status.ARCHIVE_UP_TO_DATE
     assert status.alert_text is None
     assert status.archived_count == 1
     assert status.output_dir is not None
@@ -57,7 +57,7 @@ def test_warn_state_on_failure(tmp_path: Path) -> None:
         state_path=_state(tmp_path), config_path=_config(tmp_path), now=_NOW
     )
     assert status.state == "warn"
-    assert status.headline == strings.NEEDS_ATTENTION
+    assert status.headline == tray_status.NEEDS_ATTENTION
     assert status.alert_text is not None
     assert "eșuează repetat" in status.alert_text
     assert status.alert_state == "warn"
@@ -79,7 +79,7 @@ def test_err_state_on_auth_failure_shows_command_chip(tmp_path: Path) -> None:
         state_path=_state(tmp_path), config_path=_config(tmp_path), now=_NOW
     )
     assert status.state == "err"
-    assert status.headline == strings.SYNC_BROKEN
+    assert status.headline == tray_status.SYNC_BROKEN
     assert status.alert_command == "anafpy auth login"
     assert status.alert_state == "err"
     assert status.subline.startswith("Ultima sincronizare reușită")
@@ -116,7 +116,7 @@ def test_missing_state_and_config_is_tolerated(tmp_path: Path) -> None:
     )
     assert status.state == "err"
     assert status.archived_count == 0
-    assert status.subline == strings.never_synced_subline()
+    assert status.subline == tray_status.NEVER_SYNCED
 
 
 def test_no_run_yet_with_valid_config_is_ok(tmp_path: Path) -> None:
@@ -124,4 +124,33 @@ def test_no_run_yet_with_valid_config_is_ok(tmp_path: Path) -> None:
         state_path=tmp_path / "absent.db", config_path=_config(tmp_path), now=_NOW
     )
     assert status.state == "ok"
-    assert status.subline == strings.never_synced_subline()
+    assert status.subline == tray_status.NEVER_SYNCED
+
+
+# -- phrase builders (moved from the former strings module) ---------------------
+
+
+def test_new_invoices_phrase_agrees_in_number() -> None:
+    assert tray_status._new_invoices_phrase(1) == "1 factură nouă"
+    assert tray_status._new_invoices_phrase(3) == "3 facturi noi"
+    assert tray_status._new_invoices_phrase(21) == "21 de facturi noi"
+
+
+def test_failing_alert_matches_handoff() -> None:
+    alert = tray_status._failing_alert(1, "TERMOENERGIA S.R.L.", 9)
+    assert (
+        alert
+        == "1 factură eșuează repetat — TERMOENERGIA S.R.L. — expiră din SPV în 9 zile"
+    )
+
+
+def test_failing_alert_without_partner_or_expired() -> None:
+    assert (
+        tray_status._failing_alert(2, None, 0)
+        == "2 facturi eșuează repetat — a expirat din SPV"
+    )
+
+
+def test_auth_alert_keeps_command_untranslated() -> None:
+    assert tray_status.AUTH_LOGIN_COMMAND == "anafpy auth login"
+    assert tray_status.AUTH_EXPIRED_PREFIX.startswith("Autentificarea ANAF a expirat")

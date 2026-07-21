@@ -6,8 +6,8 @@ save bar. It reads the current config, takes the followed CUIs as free entry
 are offered only as autocomplete — see DESIGN.md §8 for why ANAF's own
 authorization inventory is not the source), previews the path template live,
 and on save writes a minimal diff through
-:mod:`config_io`. Copy is in :mod:`strings`, colours in :mod:`theme`; the form
-never syncs or writes anything but ``config.toml``.
+:mod:`config_io`. Colours are in :mod:`theme`; the form never syncs or writes
+anything but ``config.toml``.
 """
 
 from __future__ import annotations
@@ -41,22 +41,45 @@ from ..scheduling import ScheduleError
 from ..scheduling import install as schedule_install
 from ..scheduling import status as schedule_status
 from ..state import Archive
-from . import config_io, strings
+from . import config_io
+from . import format as fmt
 from .preview import render_preview
 from .theme import LIGHT, MONO_FONT_FAMILY, Theme
 
 __all__ = ["SettingsView"]
 
-_ARTIFACTS = ("zip", "pdf", "xml", "signature", "metadata")
+# Artifact cards: English name (mono, a code identifier) + Romanian description.
+_ARTIFACTS = {
+    "zip": "arhiva semnată originală",
+    "pdf": "redarea oficială ANAF",
+    "xml": "XML-ul UBL al facturii",
+    "signature": "semnătura MF detașată",
+    "metadata": "fișier JSON cu detaliile mesajului",
+}
 # (combo label, scheduling kwarg, value) — maps to scheduling.py's presets.
 _FREQUENCIES = (
-    (strings.FREQ_1H, "every", "1h"),
-    (strings.FREQ_3H, "every", "3h"),
-    (strings.FREQ_6H, "every", "6h"),
-    (strings.FREQ_12H, "every", "12h"),
-    (strings.FREQ_DAILY, "daily", "06:00"),
+    ("La fiecare oră", "every", "1h"),
+    ("La fiecare 3 ore", "every", "3h"),
+    ("La fiecare 6 ore", "every", "6h"),
+    ("La fiecare 12 ore", "every", "12h"),
+    ("O dată pe zi", "daily", "06:00"),
 )
 _DEFAULT_FREQ = 2  # 6 ore
+
+# The content column stops at a reading width; the label column is fixed
+# (DESIGN.md §10, "the layout is elastic"). The form cap is the sum of both
+# plus the margins, so the whole form anchors left inside the scroll area.
+_LABEL_WIDTH = 150
+_CONTENT_MAX_WIDTH = 760
+_FORM_MAX_WIDTH = 24 + _LABEL_WIDTH + 12 + _CONTENT_MAX_WIDTH + 24
+
+_DIR_LABEL = "Dosar arhivă"
+_NEEDS_INIT = "Rulați `anaf-sync init` pentru a crea un config.toml."
+
+# CIF validation messages (mirrored by tests).
+CIF_INVALID = "CIF invalid — folosește doar cifre, fără prefixul RO."
+CIF_DUPLICATE = "CIF-ul este deja în listă."
+CIF_LAST_REMAINS = "Cel puțin un CIF trebuie să rămână în listă."
 
 
 class SettingsView(QWidget):
@@ -111,7 +134,7 @@ class SettingsView(QWidget):
         outer.setSpacing(0)
 
         if self._config is None:
-            label = QLabel(strings.SETTINGS_NEEDS_INIT)
+            label = QLabel(_NEEDS_INIT)
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             outer.addWidget(label)
             return
@@ -119,7 +142,11 @@ class SettingsView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Fields stretch with the window up to a reading width, then anchor
+        # left; the scroll area absorbs the remaining space (DESIGN.md §10).
+        scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         form = QWidget()
+        form.setMaximumWidth(_FORM_MAX_WIDTH)
         self._form_layout = QVBoxLayout(form)
         self._form_layout.setContentsMargins(24, 20, 24, 20)
         self._form_layout.setSpacing(24)
@@ -143,7 +170,7 @@ class SettingsView(QWidget):
 
     def _build_company(self) -> None:
         assert self._config is not None  # _build guards the None case
-        self._section(strings.SET_COMPANY)
+        self._section("Companie")
 
         chips = QWidget()
         chip_layout = QHBoxLayout(chips)
@@ -151,14 +178,14 @@ class SettingsView(QWidget):
         chip_layout.setSpacing(6)
         self._chip_row = chip_layout
         self._add_cif_edit = QLineEdit()
-        self._add_cif_edit.setPlaceholderText(strings.ADD_CIF_PLACEHOLDER)
+        self._add_cif_edit.setPlaceholderText("CIF nou")
         self._add_cif_edit.setFixedWidth(90)
         # Archive-seen CIFs are a convenience over the catalog, not the source of
         # the list — the user may type any CIF the config would accept.
         if suggestions := self._suggested_cifs():
             self._add_cif_edit.setCompleter(QCompleter(suggestions, self))
         self._add_cif_edit.returnPressed.connect(self._on_add_cif)
-        add_button = QPushButton(strings.BTN_ADD_CIF)
+        add_button = QPushButton("+ Adaugă CIF")
         add_button.clicked.connect(self._on_add_cif)
         chip_layout.addWidget(self._add_cif_edit)
         chip_layout.addWidget(add_button)
@@ -176,7 +203,12 @@ class SettingsView(QWidget):
         entry_layout.setSpacing(4)
         entry_layout.addWidget(chips)
         entry_layout.addWidget(self._cif_error)
-        self._labeled(strings.SET_CIFS, entry, strings.HELP_CIFS)
+        self._labeled(
+            "CIF-uri urmărite",
+            entry,
+            "CIF-urile companiilor pentru care se arhivează facturile — doar "
+            "cifre, fără prefixul RO. Cel puțin unul rămâne în listă.",
+        )
 
         directions = QWidget()
         dir_layout = QHBoxLayout(directions)
@@ -185,9 +217,9 @@ class SettingsView(QWidget):
         self._radios: dict[str, QRadioButton] = {}
         current_dir = self._config.direction.value if self._config else "received"
         for value, label in (
-            ("received", strings.DIR_RECEIVED),
-            ("sent", strings.DIR_SENT),
-            ("both", strings.DIR_BOTH),
+            ("received", "Primite"),
+            ("sent", "Trimise"),
+            ("both", "Ambele"),
         ):
             radio = QRadioButton(label)
             radio.setChecked(value == current_dir)
@@ -196,7 +228,7 @@ class SettingsView(QWidget):
             self._radios[value] = radio
             dir_layout.addWidget(radio)
         dir_layout.addStretch(1)
-        self._labeled(strings.SET_DIRECTION, directions)
+        self._labeled("Direcție", directions)
 
         lookback = QWidget()
         lb_layout = QHBoxLayout(lookback)
@@ -211,11 +243,15 @@ class SettingsView(QWidget):
         lb_layout.addWidget(self._lookback, 1)
         lb_layout.addWidget(self._lookback_label)
         self._on_lookback(self._lookback.value())
-        self._labeled(strings.SET_LOOKBACK, lookback, strings.HELP_LOOKBACK)
+        self._labeled(
+            "Fereastră de căutare",
+            lookback,
+            "ANAF păstrează mesajele cel mult 60 de zile.",
+        )
 
     def _build_archive(self) -> None:
         assert self._config is not None  # _build guards the None case
-        self._section(strings.SET_ARCHIVE)
+        self._section("Arhivă")
 
         directory = QWidget()
         dir_layout = QHBoxLayout(directory)
@@ -224,11 +260,11 @@ class SettingsView(QWidget):
         self._directory.setReadOnly(True)
         self._directory.setProperty("mono", True)
         self._directory.textChanged.connect(self._update_save_enabled)
-        choose = QPushButton(strings.BTN_CHOOSE)
+        choose = QPushButton("Alege…")
         choose.clicked.connect(self._on_choose_dir)
         dir_layout.addWidget(self._directory, 1)
         dir_layout.addWidget(choose)
-        self._labeled(strings.SET_DIR, directory)
+        self._labeled(_DIR_LABEL, directory)
 
         template_box = QWidget()
         tb_layout = QVBoxLayout(template_box)
@@ -242,7 +278,7 @@ class SettingsView(QWidget):
         self._preview.setWordWrap(True)
         tb_layout.addWidget(self._template)
         tb_layout.addWidget(self._preview)
-        self._labeled(strings.SET_TEMPLATE, template_box)
+        self._labeled("Șablon de denumire", template_box)
 
         cards = QWidget()
         grid = QGridLayout(cards)
@@ -255,22 +291,20 @@ class SettingsView(QWidget):
             box.clicked.connect(self._update_save_enabled)
             self._artifact_boxes[name] = box
             grid.addWidget(self._artifact_card(name, box), i // 3, i % 3)
-        self._labeled(strings.SET_ARTIFACTS, cards)
+        self._labeled("Fișiere salvate", cards)
 
     def _build_schedule(self) -> None:
-        self._section(strings.SET_SCHEDULE)
+        self._section("Programare")
         self._frequency = QComboBox()
         for label, _kind, _value in _FREQUENCIES:
             self._frequency.addItem(label)
         self._frequency.setCurrentIndex(_DEFAULT_FREQ)
         self._frequency.currentIndexChanged.connect(self._update_save_enabled)
-        self._labeled(strings.SET_FREQUENCY, self._frequency)
+        self._labeled("Frecvență", self._frequency)
 
         status = schedule_status()
         active = status != "not installed"
-        self._schedule_status = QLabel(
-            strings.SCHEDULE_ACTIVE if active else strings.SCHEDULE_INACTIVE
-        )
+        self._schedule_status = QLabel("Activă" if active else "Dezactivată")
         self._schedule_status.setObjectName(
             "scheduleActive" if active else "scheduleInactive"
         )
@@ -281,13 +315,15 @@ class SettingsView(QWidget):
         bar.setObjectName("saveBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(24, 10, 24, 10)
-        note = QLabel(strings.SAVE_NOTE)
+        note = QLabel(
+            "Modificările se scriu în config.toml — fișierul rămâne editabil manual"
+        )
         note.setObjectName("saveNote")
         layout.addWidget(note)
         layout.addStretch(1)
-        cancel = QPushButton(strings.BTN_CANCEL)
+        cancel = QPushButton("Renunță")
         cancel.clicked.connect(self._reset)
-        self._save_button = QPushButton(strings.BTN_SAVE)
+        self._save_button = QPushButton("Salvează modificările")
         self._save_button.setObjectName("savePrimary")
         self._save_button.clicked.connect(self._save)
         layout.addWidget(cancel)
@@ -302,7 +338,7 @@ class SettingsView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
         key = QLabel(label)
-        key.setFixedWidth(150)
+        key.setFixedWidth(_LABEL_WIDTH)
         key.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(key)
 
@@ -331,7 +367,7 @@ class SettingsView(QWidget):
         text_layout.setSpacing(0)
         title = QLabel(name)
         title.setProperty("mono", True)
-        desc = QLabel(strings.ARTIFACT_DESCRIPTIONS[name])
+        desc = QLabel(_ARTIFACTS[name])
         desc.setObjectName("help")
         desc.setWordWrap(True)
         text_layout.addWidget(title)
@@ -346,7 +382,7 @@ class SettingsView(QWidget):
         button = QToolButton()
         button.setObjectName("cifChip")
         button.setText(f"{cif}  ×")
-        button.setToolTip(strings.remove_cif(cif))
+        button.setToolTip(f"Elimină {cif}")
         button.clicked.connect(lambda: self._on_remove_cif(cif))
         self._cif_buttons[cif] = button
         # Keep the chips ahead of the entry field, button and stretch.
@@ -359,7 +395,7 @@ class SettingsView(QWidget):
     def _on_remove_cif(self, cif: str) -> None:
         if len(self._cif_buttons) == 1:
             # config.py requires at least one CIF; refuse rather than write junk.
-            self._cif_message(strings.CIF_LAST_REMAINS)
+            self._cif_message(CIF_LAST_REMAINS)
             return
         button = self._cif_buttons.pop(cif)
         self._chip_row.removeWidget(button)
@@ -372,10 +408,10 @@ class SettingsView(QWidget):
         # config would reject.
         cif = self._add_cif_edit.text().strip().upper().removeprefix("RO")
         if not cif or not cif.isdigit():
-            self._cif_message(strings.CIF_INVALID)
+            self._cif_message(CIF_INVALID)
             return
         if cif in self._cif_buttons:
-            self._cif_message(strings.CIF_DUPLICATE)
+            self._cif_message(CIF_DUPLICATE)
             return
         self._add_chip(cif)
         self._add_cif_edit.clear()
@@ -383,17 +419,17 @@ class SettingsView(QWidget):
         self._update_save_enabled()
 
     def _on_lookback(self, value: int) -> None:
-        self._lookback_label.setText(strings.lookback_value(value))
+        self._lookback_label.setText(fmt.noun(value, "zi", "zile"))
 
     def _on_choose_dir(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, strings.SET_DIR)
+        chosen = QFileDialog.getExistingDirectory(self, _DIR_LABEL)
         if chosen:
             self._directory.setText(chosen)
 
     def _refresh_preview(self) -> None:
         result = render_preview(self._template.text(), directory=self._directory.text())
         if result.ok:
-            self._preview.setText(strings.PREVIEW_PREFIX + result.text)
+            self._preview.setText("Previzualizare: " + result.text)
             self._preview.setProperty("state", "ok")
         else:
             self._preview.setText(result.text)
@@ -449,7 +485,7 @@ class SettingsView(QWidget):
         try:
             config_io.validate(doc)
         except ValidationError:
-            self._preview.setText(strings.SETTINGS_NEEDS_INIT)
+            self._preview.setText(_NEEDS_INIT)
             return
         config_io.save(doc, self._config_path)
         self._reinstall_schedule_if_active()

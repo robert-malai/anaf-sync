@@ -3,8 +3,8 @@
 ``run`` is the real entry point (the package ``__init__`` guards the PySide6
 import and delegates here). It is a single-instance, menu-bar-only app that
 observes ``state.db`` and offers to spawn a sync — no window yet (that arrives
-in M2). All display logic lives in the pure :mod:`status` / :mod:`strings` /
-:mod:`theme` modules; this file is the thin Qt assembly over them.
+in M2). All display logic lives in the pure :mod:`status` / :mod:`theme`
+modules; this file is the thin Qt assembly over them.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import default_config_path, default_state_path
-from . import strings
 from .icons import status_icon
 from .runner import SyncRunner
 from .status import TrayStatus, load_status
@@ -48,6 +47,14 @@ __all__ = ["TrayApp", "main", "run"]
 
 _MENU_WIDTH = 300
 _DOT = 9  # status-dot diameter, px
+
+# Menu copy (design mock §1a).
+MENU_SYNC_NOW = "Sincronizează acum"
+MENU_SYNCING = "Se sincronizează…"
+MENU_ARCHIVED_INVOICES = "Facturi arhivate…"
+MENU_OPEN_FOLDER = "Deschide dosarul arhivei"
+MENU_SETTINGS = "Setări…"
+MENU_QUIT = "Ieșire"
 
 
 class TrayApp:
@@ -94,25 +101,25 @@ class TrayApp:
         self._menu.addAction(self._header_action)
         self._menu.addSeparator()
 
-        self._sync_action = QAction(strings.MENU_SYNC_NOW, self._menu)
+        self._sync_action = QAction(MENU_SYNC_NOW, self._menu)
         self._sync_action.triggered.connect(lambda: self._runner.start())
         self._menu.addAction(self._sync_action)
 
-        self._archived_action = QAction(strings.MENU_ARCHIVED_INVOICES, self._menu)
+        self._archived_action = QAction(MENU_ARCHIVED_INVOICES, self._menu)
         self._archived_action.triggered.connect(self._open_window)
         self._menu.addAction(self._archived_action)
 
-        self._folder_action = QAction(strings.MENU_OPEN_FOLDER, self._menu)
+        self._folder_action = QAction(MENU_OPEN_FOLDER, self._menu)
         self._folder_action.triggered.connect(self._open_folder)
         self._menu.addAction(self._folder_action)
 
         self._menu.addSeparator()
-        self._settings_action = QAction(strings.MENU_SETTINGS, self._menu)
+        self._settings_action = QAction(MENU_SETTINGS, self._menu)
         self._settings_action.triggered.connect(self._open_settings)
         self._menu.addAction(self._settings_action)
 
         self._menu.addSeparator()
-        quit_action = QAction(strings.MENU_QUIT, self._menu)
+        quit_action = QAction(MENU_QUIT, self._menu)
         quit_action.triggered.connect(self._quit)
         self._menu.addAction(quit_action)
 
@@ -176,7 +183,7 @@ class TrayApp:
         self._apply_alert(status, theme)
 
         self._archived_action.setText(
-            f"{strings.MENU_ARCHIVED_INVOICES}  {status.archived_count}"
+            f"{MENU_ARCHIVED_INVOICES}  {status.archived_count}"
         )
         self._folder_action.setEnabled(status.output_dir is not None)
 
@@ -199,11 +206,11 @@ class TrayApp:
     # -- actions --------------------------------------------------------------
 
     def _on_sync_started(self) -> None:
-        self._sync_action.setText(strings.MENU_SYNCING)
+        self._sync_action.setText(MENU_SYNCING)
         self._sync_action.setEnabled(False)
 
     def _on_sync_finished(self, _exit_code: int) -> None:
-        self._sync_action.setText(strings.MENU_SYNC_NOW)
+        self._sync_action.setText(MENU_SYNC_NOW)
         self._sync_action.setEnabled(True)
         self.refresh()
 
@@ -238,6 +245,10 @@ class TrayApp:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_dir)))
 
     def _quit(self) -> None:
+        # Quitting from the menu never sends the window a closeEvent, so the
+        # geometry save has to happen here for an open window.
+        if self._window is not None:
+            self._window.save_geometry_to_settings()
         self._watcher.stop()
         self._tray.hide()
         QApplication.quit()

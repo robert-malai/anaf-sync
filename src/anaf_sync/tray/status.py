@@ -16,9 +16,24 @@ from pathlib import Path
 from ..config import load_config
 from ..health import Health, HealthState, derive_health
 from ..state import Archive, FailureRecord, RunRecord
-from . import strings
+from . import format as fmt
 
 __all__ = ["TrayStatus", "load_status"]
+
+# -- Headlines (design mock §1a) -----------------------------------------------
+
+ARCHIVE_UP_TO_DATE = "Arhiva este la zi"
+NEEDS_ATTENTION = "Necesită atenție"
+SYNC_BROKEN = "Sincronizarea nu funcționează"
+
+NEVER_SYNCED = "Nu s-a sincronizat încă"
+
+#: Rendered before the mono ``anafpy auth login`` chip in the red alert row.
+AUTH_EXPIRED_PREFIX = "Autentificarea ANAF a expirat — rulați "
+AUTH_LOGIN_COMMAND = "anafpy auth login"
+
+#: Red row when the last run broke for a non-auth reason (crash / stale).
+_GENERIC_ERROR = "Ultima sincronizare a eșuat — verificați jurnalul aplicației"
 
 #: Shown in the red alert row when ``config.toml`` cannot be parsed.
 _CONFIG_INVALID = "Configurație invalidă — verificați config.toml"
@@ -89,22 +104,38 @@ def _read_archive(
 
 def _headline(state: HealthState) -> str:
     if state == "ok":
-        return strings.ARCHIVE_UP_TO_DATE
+        return ARCHIVE_UP_TO_DATE
     if state == "warn":
-        return strings.NEEDS_ATTENTION
-    return strings.SYNC_BROKEN
+        return NEEDS_ATTENTION
+    return SYNC_BROKEN
+
+
+def _new_invoices_phrase(count: int) -> str:
+    """``"3 facturi noi"`` / ``"1 factură nouă"`` (agreeing adjective)."""
+    adjective = "nouă" if count == 1 else "noi"
+    return f"{fmt.noun(count, 'factură', 'facturi')} {adjective}"
 
 
 def _subline(state: HealthState, last_run: RunRecord | None, now: dt.datetime) -> str:
     if last_run is None:
-        return strings.never_synced_subline()
-    relative = strings.relative_time(
-        last_run.finished_at.astimezone(), now.astimezone()
-    )
+        return NEVER_SYNCED
+    relative = fmt.relative_time(last_run.finished_at.astimezone(), now.astimezone())
     if state == "err":
-        return strings.last_success_subline(relative)
+        return f"Ultima sincronizare reușită: {relative}"
+    base = f"Ultima sincronizare: {relative}"
     new_count = last_run.archived if state == "ok" else 0
-    return strings.last_sync_subline(relative, new_count)
+    if new_count > 0:
+        return f"{base} · {_new_invoices_phrase(new_count)}"
+    return base
+
+
+def _failing_alert(count: int, partner: str | None, days_left: int) -> str:
+    """Amber row: ``"1 factură eșuează repetat — TERMOENERGIA S.R.L. — …"``."""
+    parts = [f"{fmt.noun(count, 'factură', 'facturi')} eșuează repetat"]
+    if partner:
+        parts.append(partner)
+    parts.append(fmt.spv_expiry(days_left))
+    return " — ".join(parts)
 
 
 def _alert(
@@ -116,14 +147,14 @@ def _alert(
         return _CONFIG_INVALID, None, "err"
     if state == "err":
         if health.auth_broken:
-            return strings.AUTH_EXPIRED_PREFIX, strings.AUTH_LOGIN_COMMAND, "err"
-        return strings.generic_error_alert(), None, "err"
+            return AUTH_EXPIRED_PREFIX, AUTH_LOGIN_COMMAND, "err"
+        return _GENERIC_ERROR, None, "err"
     if state == "warn":
         worst = health.worst_failure
         partner = worst.partner_name if worst else None
         days_left = worst.days_left if worst else 0
         return (
-            strings.failing_alert(health.failure_count, partner, days_left),
+            _failing_alert(health.failure_count, partner, days_left),
             None,
             "warn",
         )

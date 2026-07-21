@@ -14,10 +14,15 @@ pytest.importorskip("PySide6")
 
 from anaf_sync.config import write_default_config  # noqa: E402
 from anaf_sync.state import Archive, RunRecord  # noqa: E402
-from anaf_sync.tray import strings  # noqa: E402
-from anaf_sync.tray.app import TrayApp  # noqa: E402
+from anaf_sync.tray.app import (  # noqa: E402
+    MENU_ARCHIVED_INVOICES,
+    MENU_SYNC_NOW,
+    MENU_SYNCING,
+    TrayApp,
+)
 from anaf_sync.tray.icons import status_icon  # noqa: E402
 from anaf_sync.tray.runner import SyncRunner  # noqa: E402
+from anaf_sync.tray.status import ARCHIVE_UP_TO_DATE, NEEDS_ATTENTION  # noqa: E402
 from anaf_sync.tray.theme import DARK, LIGHT, menu_qss, status_color  # noqa: E402
 from anaf_sync.tray.watcher import StateWatcher  # noqa: E402
 
@@ -64,7 +69,7 @@ def test_tray_app_ok_state(qtbot: object, tmp_path: Path) -> None:
         archive.record_run(RunRecord(finished_at=_NOW, outcome="ok", archived=2))
     app = _app(tmp_path)
     app.refresh()
-    assert strings.ARCHIVE_UP_TO_DATE in app._headline_label.text()
+    assert ARCHIVE_UP_TO_DATE in app._headline_label.text()
     assert app._alert_frame.isHidden()
     assert app._folder_action.isEnabled()  # config valid → dir known
 
@@ -74,7 +79,7 @@ def test_tray_app_warn_state_shows_alert(qtbot: object, tmp_path: Path) -> None:
         archive.record_failure("m9", "HTTP 500")
     app = _app(tmp_path)
     app.refresh()
-    assert strings.NEEDS_ATTENTION in app._headline_label.text()
+    assert NEEDS_ATTENTION in app._headline_label.text()
     assert not app._alert_frame.isHidden()
     assert "eșuează repetat" in app._alert_label.text()
 
@@ -95,7 +100,7 @@ def test_tray_app_archived_count_in_menu(qtbot: object, tmp_path: Path) -> None:
     app = _app(tmp_path)
     app.refresh()
     assert "1" in app._archived_action.text()
-    assert app._archived_action.text().startswith(strings.MENU_ARCHIVED_INVOICES)
+    assert app._archived_action.text().startswith(MENU_ARCHIVED_INVOICES)
 
 
 def test_tray_app_folder_disabled_when_config_missing(
@@ -114,10 +119,10 @@ def test_tray_app_sync_item_toggles_while_running(
     app = _app(tmp_path)
     app.refresh()
     app._on_sync_started()
-    assert app._sync_action.text() == strings.MENU_SYNCING
+    assert app._sync_action.text() == MENU_SYNCING
     assert not app._sync_action.isEnabled()
     app._on_sync_finished(0)
-    assert app._sync_action.text() == strings.MENU_SYNC_NOW
+    assert app._sync_action.text() == MENU_SYNC_NOW
     assert app._sync_action.isEnabled()
 
 

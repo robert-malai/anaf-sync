@@ -11,7 +11,6 @@ from PySide6.QtCore import QModelIndex, Qt  # noqa: E402
 from sample_data import seed_sample_archive  # noqa: E402
 
 from anaf_sync.state import Archive, CatalogEntry  # noqa: E402
-from anaf_sync.tray import strings  # noqa: E402
 from anaf_sync.tray.calendar import RangeCalendar  # noqa: E402
 from anaf_sync.tray.details import artifact_path  # noqa: E402
 from anaf_sync.tray.models import CatalogFilters, CatalogModel  # noqa: E402
@@ -203,7 +202,7 @@ def test_window_footer_and_problem_chip(qtbot: object, tmp_path: Path) -> None:
     win = MainWindow(state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml")
     qtbot.addWidget(win)
     assert "în arhivă" in win._footer.text()
-    assert win._chip_problems.text() == strings.problems_chip(2)
+    assert win._chip_problems.text() == "Probleme (2)"
 
 
 def test_window_selection_updates_details(qtbot: object, tmp_path: Path) -> None:
@@ -224,3 +223,37 @@ def test_window_direction_chip_filters(qtbot: object, tmp_path: Path) -> None:
     ids = _ids(win._model)
     assert "3210447813" not in ids  # the sent invoice gone
     assert "3210447810" not in ids  # failing hidden under a direction filter
+
+
+# -- elastic layout + geometry persistence -------------------------------------
+
+
+def test_window_design_size_is_the_minimum(qtbot: object, tmp_path: Path) -> None:
+    win = MainWindow(state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml")
+    qtbot.addWidget(win)
+    assert (win.minimumWidth(), win.minimumHeight()) == (980, 620)
+    win.resize(1400, 900)  # a fixed-size window would refuse this
+    assert (win.width(), win.height()) == (1400, 900)
+
+
+def test_window_geometry_persists_across_instances(
+    qtbot: object, tmp_path: Path
+) -> None:
+    # QSettings is redirected to a throwaway ini dir by conftest.
+    first = MainWindow(
+        state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml"
+    )
+    qtbot.addWidget(first)
+    first.resize(1000, 700)
+    first.close()  # closeEvent saves the geometry
+
+    second = MainWindow(
+        state_path=tmp_path / "state.db", config_path=tmp_path / "c.toml"
+    )
+    qtbot.addWidget(second)
+    # The offscreen test screen is 800×800 (hardcoded in the Qt plugin) —
+    # narrower than the design minimum. Height round-trips through QSettings;
+    # width shows the other half of the design: restoreGeometry clamps to the
+    # available screen (detached-monitor recovery) and the minimum floors it.
+    assert second.height() == 700
+    assert second.width() == 980

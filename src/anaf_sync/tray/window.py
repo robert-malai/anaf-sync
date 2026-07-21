@@ -1,10 +1,15 @@
 """The Facturi main window: sidebar, toolbar, catalog table, details pane.
 
-Fixed 980×620 shell with a Facturi view over :class:`CatalogModel` (painted by
-:class:`CatalogDelegate`) and a placeholder Setări page (filled in M3). The
-window is a pure observer: selecting a row swaps the details pane; its buttons
-emit intents the window turns into file-manager / sync actions. Filters
-(direction chips ∧ period ∧ search) combine into one :class:`CatalogFilters`.
+A resizable shell (980×620 is the *minimum* — the size the views were
+designed at) with a Facturi view over :class:`CatalogModel` (painted by
+:class:`CatalogDelegate`) and the Setări page. The layout is elastic per
+DESIGN.md §10: the table absorbs extra space (the Partener column flexes),
+while the sidebar, details pane, and toolbar rows stay anchored. Geometry
+persists across launches through ``QSettings`` — deliberately not
+``config.toml``, which only churns on explicit saves. The window is a pure
+observer: selecting a row swaps the details pane; its buttons emit intents
+the window turns into file-manager / sync actions. Filters (direction chips ∧
+period ∧ search) combine into one :class:`CatalogFilters`.
 """
 
 from __future__ import annotations
@@ -15,8 +20,16 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QModelIndex, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import (
+    QByteArray,
+    QDate,
+    QModelIndex,
+    QSettings,
+    Qt,
+    QUrl,
+    Signal,
+)
+from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDateEdit,
@@ -33,7 +46,6 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import default_config_path, default_state_path
-from . import strings
 from .calendar import RangeCalendar
 from .delegates import CatalogDelegate
 from .details import DetailsPane
@@ -46,6 +58,19 @@ __all__ = ["MainWindow", "reveal_in_file_manager"]
 _WIDTH = 980
 _HEIGHT = 620
 _COL_WIDTHS = {0: 52, 1: 88, 3: 76, 4: 96}  # column 2 (Partener) flexes
+
+_TITLE = "anaf-sync"
+_GEOMETRY_KEY = "window/geometry"
+
+
+def _geometry_settings() -> QSettings:
+    """The platform-native store for window geometry (plist / registry / ini)."""
+    return QSettings("anaf-sync", "tray")
+
+
+def _problems_chip_text(count: int) -> str:
+    """``"Probleme"`` / ``"Probleme (1)"`` — suffix the count when non-zero."""
+    return "Probleme" if count == 0 else f"Probleme ({count})"
 
 
 class MainWindow(QMainWindow):
@@ -75,8 +100,10 @@ class MainWindow(QMainWindow):
         self._period_to: dt.date | None = None
         self._table: QTableView | None = None
 
-        self.setWindowTitle(strings.WINDOW_TITLE)
-        self.setFixedSize(_WIDTH, _HEIGHT)
+        self.setWindowTitle(_TITLE)
+        # The design size is the minimum; the layout stretches from there
+        # (DESIGN.md §10). Never a fixed size.
+        self.setMinimumSize(_WIDTH, _HEIGHT)
 
         self._model = CatalogModel(self._state_path, now=self._utc_now)
         self._details = DetailsPane()
@@ -87,6 +114,25 @@ class MainWindow(QMainWindow):
         self._build()
         self.apply_theme(self._theme)
         self._apply_filters()
+        self._restore_geometry()
+
+    # -- geometry persistence ---------------------------------------------------
+
+    def _restore_geometry(self) -> None:
+        # restoreGeometry also recovers maximised state and pulls a position
+        # remembered on a detached monitor back onto a live screen; a missing
+        # or invalid blob leaves the design-size default.
+        blob = _geometry_settings().value(_GEOMETRY_KEY)
+        if isinstance(blob, QByteArray):
+            self.restoreGeometry(blob)
+
+    def save_geometry_to_settings(self) -> None:
+        """Persist the current geometry (also called by the tray on quit)."""
+        _geometry_settings().setValue(_GEOMETRY_KEY, self.saveGeometry())
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.save_geometry_to_settings()
+        super().closeEvent(event)
 
     def _utc_now(self) -> dt.datetime:
         return dt.datetime.now(dt.UTC)
@@ -120,7 +166,7 @@ class MainWindow(QMainWindow):
         bar.setFixedHeight(38)
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._title_label = QLabel(strings.WINDOW_TITLE)
+        self._title_label = QLabel(_TITLE)
         self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._title_label)
         return bar
@@ -135,8 +181,8 @@ class MainWindow(QMainWindow):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._nav_group = QButtonGroup(self)
-        self._nav_invoices = self._nav_button(strings.SIDEBAR_INVOICES, 0)
-        self._nav_settings = self._nav_button(strings.SIDEBAR_SETTINGS, 1)
+        self._nav_invoices = self._nav_button("Facturi", 0)
+        self._nav_settings = self._nav_button("Setări", 1)
         self._nav_invoices.setChecked(True)
         layout.addWidget(self._nav_invoices)
         layout.addWidget(self._nav_settings)
@@ -177,15 +223,15 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         self._search = QLineEdit()
-        self._search.setPlaceholderText(strings.SEARCH_PLACEHOLDER)
+        self._search.setPlaceholderText("Caută după număr sau partener…")
         self._search.textChanged.connect(self._apply_filters)
         layout.addWidget(self._search, 1)
 
         self._filter_group = QButtonGroup(self)
-        self._chip_all = self._chip(strings.FILTER_ALL)
-        self._chip_received = self._chip(strings.FILTER_RECEIVED)
-        self._chip_sent = self._chip(strings.FILTER_SENT)
-        self._chip_problems = self._chip(strings.problems_chip(0))
+        self._chip_all = self._chip("Toate")
+        self._chip_received = self._chip("Primite")
+        self._chip_sent = self._chip("Trimise")
+        self._chip_problems = self._chip(_problems_chip_text(0))
         self._chip_all.setChecked(True)
         self._chip_all.clicked.connect(lambda: self._set_direction(None, False))
         self._chip_received.clicked.connect(
@@ -208,12 +254,12 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addWidget(QLabel(strings.PERIOD_LABEL))
+        layout.addWidget(QLabel("Perioadă"))
 
         self._period_group = QButtonGroup(self)
-        self._period_month = self._chip(strings.PERIOD_CURRENT)
-        self._period_all = self._chip(strings.PERIOD_ALL)
-        self._period_custom = self._chip(strings.PERIOD_CUSTOM)
+        self._period_month = self._chip("Luna curentă")
+        self._period_all = self._chip("Toate")
+        self._period_custom = self._chip("Personalizat…")
         self._period_all.setChecked(True)
         self._period_month.clicked.connect(self._period_current_month)
         self._period_all.clicked.connect(self._period_all_time)
@@ -336,10 +382,12 @@ class MainWindow(QMainWindow):
         self._update_footer()
 
     def _update_footer(self) -> None:
+        shown, total = self._model.shown_count(), self._model.total_count()
         self._footer.setText(
-            strings.footer_text(self._model.shown_count(), self._model.total_count())
+            f"{shown} afișate · {total} în arhivă · "
+            "lista se încarcă pe măsură ce derulați"
         )
-        self._chip_problems.setText(strings.problems_chip(self._model.problem_count()))
+        self._chip_problems.setText(_problems_chip_text(self._model.problem_count()))
 
     # -- selection + actions --------------------------------------------------
 

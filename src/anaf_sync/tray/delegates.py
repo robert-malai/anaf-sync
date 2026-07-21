@@ -19,7 +19,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
-from . import strings
+from .format import direction_label
 from .models import CatalogModel
 from .theme import LIGHT, RADIUS_PILL, Theme
 
@@ -138,12 +138,13 @@ class CatalogDelegate(QStyledItemDelegate):
     def _pill_style(
         self, direction: object, theme: Theme
     ) -> tuple[str, str, str, str | None]:
+        label = direction_label(str(direction))
         if direction == "received":
-            return strings.PILL_RECEIVED, theme.accent_soft_bg, theme.accent, None
+            return label, theme.accent_soft_bg, theme.accent, None
         if direction == "sent":
-            return strings.PILL_SENT, theme.mono_chip_bg, theme.muted, theme.border
+            return label, theme.mono_chip_bg, theme.muted, theme.border
         if direction == "failing":
-            return strings.PILL_FAILED, theme.red_bg, theme.red, None
+            return label, theme.red_bg, theme.red, None
         return "", theme.mono_chip_bg, theme.muted, None
 
     def _paint_stripe(

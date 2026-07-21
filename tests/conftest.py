@@ -9,9 +9,32 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 # Run Qt headless in tests/CI: the tray suites (pytest-qt) must never try to
 # reach a real display. Harmless when PySide6 is not installed.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_qsettings(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Point ``QSettings`` at a throwaway ini dir for the whole session.
+
+    The tray window persists its geometry through ``QSettings``; without this
+    redirect the suite would read and write the developer's real per-user
+    store. No-op when the ``tray`` extra (PySide6) is absent.
+    """
+    try:
+        from PySide6.QtCore import QSettings
+    except ImportError:
+        return
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(
+        QSettings.Format.IniFormat,
+        QSettings.Scope.UserScope,
+        str(tmp_path_factory.mktemp("qsettings")),
+    )
+
 
 _ENV_FILE = Path(__file__).parent.parent / ".env"
 

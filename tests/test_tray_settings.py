@@ -11,7 +11,6 @@ from PySide6.QtWidgets import QPushButton  # noqa: E402
 
 from anaf_sync.config import load_config, write_default_config  # noqa: E402
 from anaf_sync.tray import settings_view as sv  # noqa: E402
-from anaf_sync.tray import strings  # noqa: E402
 from anaf_sync.tray.settings_view import SettingsView  # noqa: E402
 
 
@@ -86,7 +85,7 @@ def test_cancel_reloads_file_without_hiding_settings(
         encoding="utf-8",
     )
 
-    qtbot.mouseClick(_button(view, strings.BTN_CANCEL), Qt.MouseButton.LeftButton)
+    qtbot.mouseClick(_button(view, "Renunță"), Qt.MouseButton.LeftButton)
 
     assert view.layout() is not None
     assert view.layout().count() == 2
@@ -123,7 +122,7 @@ def test_last_cif_cannot_be_removed(qtbot: object, tmp_path: Path) -> None:
     view = _view(tmp_path)
     view._cif_buttons["12345678"].click()  # try to remove the sole CIF
     assert view._selected_cifs() == ["12345678"]  # refused
-    assert view._cif_error.text() == strings.CIF_LAST_REMAINS
+    assert view._cif_error.text() == sv.CIF_LAST_REMAINS
 
 
 def test_add_then_remove_cif(qtbot: object, tmp_path: Path) -> None:
@@ -144,7 +143,7 @@ def test_add_cif_validates_digits(qtbot: object, tmp_path: Path) -> None:
     view._add_cif_edit.setText("not-a-cif")
     view._on_add_cif()
     assert "not-a-cif" not in view._cif_buttons
-    assert view._cif_error.text() == strings.CIF_INVALID
+    assert view._cif_error.text() == sv.CIF_INVALID
 
 
 def test_add_cif_rejects_duplicate(qtbot: object, tmp_path: Path) -> None:
@@ -152,7 +151,7 @@ def test_add_cif_rejects_duplicate(qtbot: object, tmp_path: Path) -> None:
     view._add_cif_edit.setText("12345678")  # already configured
     view._on_add_cif()
     assert view._selected_cifs() == ["12345678"]
-    assert view._cif_error.text() == strings.CIF_DUPLICATE
+    assert view._cif_error.text() == sv.CIF_DUPLICATE
 
 
 def test_save_writes_minimal_diff(qtbot: object, tmp_path: Path) -> None:

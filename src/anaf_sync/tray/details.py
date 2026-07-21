@@ -3,7 +3,8 @@
 Rebuilt on each selection from the pure record the model hands over. It emits
 intent signals (open the PDF, reveal in the file manager, retry the sync) that
 the window wires to real actions; it never touches the archive or the network
-itself. Copy comes from :mod:`strings`, colours from the active :class:`Theme`.
+itself. Shared phrases come from :mod:`format`, colours from the active
+:class:`Theme`.
 """
 
 from __future__ import annotations
@@ -25,13 +26,14 @@ from PySide6.QtWidgets import (
 from ..health import DELAY_THRESHOLD_DAYS, upload_delay_days
 from ..state import CatalogEntry
 from . import format as fmt
-from . import strings
 from .models import FailureRow
 from .theme import LIGHT, MONO_FONT_FAMILY, RADIUS_CHIP, RADIUS_PANEL, Theme
 
 __all__ = ["DetailsPane", "artifact_path"]
 
 _WIDTH = 250
+
+_FILE_MISSING_TOOLTIP = "fișierul nu a fost găsit pe disc"
 
 
 def artifact_path(base_path: str, extension: str) -> Path:
@@ -80,7 +82,9 @@ class DetailsPane(QWidget):
 
     def show_empty(self) -> None:
         self._reset()
-        self._layout.addWidget(self._muted(strings.DETAILS_EMPTY, wrap=True))
+        self._layout.addWidget(
+            self._muted("Selectați o factură pentru detalii.", wrap=True)
+        )
 
     def _show_catalog(self, entry: CatalogEntry) -> None:
         self._reset()
@@ -92,11 +96,11 @@ class DetailsPane(QWidget):
             self._layout.addWidget(self._delayed_panel(entry, delay))
 
         self._add_facts(
-            (strings.DETAIL_PARTNER, entry.partner_name or fmt.EM_DASH),
-            (strings.DETAIL_PARTNER_CIF, fmt.provenance(entry.partner_cif)),
-            (strings.DETAIL_ISSUE_DATE, fmt.short_date(entry.issue_date)),
-            (strings.DETAIL_SPV_DATE, fmt.short_date(_spv_date(entry))),
-            (strings.DETAIL_TOTAL, fmt.money(entry.total, entry.currency)),
+            ("Partener", entry.partner_name or fmt.EM_DASH),
+            ("CIF partener", fmt.provenance(entry.partner_cif)),
+            ("Data emiterii", fmt.short_date(entry.issue_date)),
+            ("Încărcată în SPV", fmt.short_date(_spv_date(entry))),
+            ("Total", fmt.money(entry.total, entry.currency)),
         )
         self._add_files(entry)
         self._add_path_box(entry.base_path)
@@ -110,7 +114,7 @@ class DetailsPane(QWidget):
         self._layout.addWidget(self._pill("failing"))
         self._layout.addWidget(self._failing_panel(row))
 
-        retry = self._button(strings.BTN_RETRY, primary=True, danger=True)
+        retry = self._button("Reîncearcă acum", primary=True, danger=True)
         retry.clicked.connect(lambda: self.retry_requested.emit())
         self._layout.addWidget(retry)
 
@@ -119,27 +123,26 @@ class DetailsPane(QWidget):
     # -- panels ---------------------------------------------------------------
 
     def _delayed_panel(self, entry: CatalogEntry, delay: int) -> QWidget:
-        body = strings.delayed_body(
-            fmt.short_date(entry.issue_date),
-            fmt.short_date(_spv_date(entry)),
-            delay,
-            DELAY_THRESHOLD_DAYS,
+        after = fmt.noun(delay, "zi", "zile")
+        limit = fmt.noun(DELAY_THRESHOLD_DAYS, "zi", "zile")
+        body = (
+            f"Emisă {fmt.short_date(entry.issue_date)} · încărcată în SPV "
+            f"{fmt.short_date(_spv_date(entry))} — după {after} (limita: {limit})"
         )
         return self._panel(
-            strings.DELAYED_TITLE, [body], self._theme.amber, self._theme.amber_bg
+            "Declarată cu întârziere", [body], self._theme.amber, self._theme.amber_bg
         )
 
     def _failing_panel(self, row: FailureRow) -> QWidget:
+        first = fmt.short_date(row.record.first_failed_at.date())
+        attempts = fmt.noun(row.record.attempts, "încercare", "încercări")
         lines = [
-            strings.failing_since(
-                fmt.short_date(row.record.first_failed_at.date()),
-                row.record.attempts,
-            ),
-            f"{strings.FAILING_LAST_ERROR} {row.record.error}",
-            strings.spv_expiry_line(row.days_left),
+            f"Eșuează din {first} · {attempts}",
+            f"Ultima eroare: {row.record.error}",
+            fmt.spv_expiry(row.days_left).capitalize(),
         ]
         return self._panel(
-            strings.FAILING_TITLE, lines, self._theme.red, self._theme.red_bg
+            "Descărcarea eșuează repetat", lines, self._theme.red, self._theme.red_bg
         )
 
     def _panel(self, title: str, lines: list[str], color: str, bg: str) -> QWidget:
@@ -184,7 +187,7 @@ class DetailsPane(QWidget):
     def _add_files(self, entry: CatalogEntry) -> None:
         if not entry.artifacts:
             return
-        self._layout.addWidget(self._section_label(strings.DETAIL_FILES))
+        self._layout.addWidget(self._section_label("Fișiere pe disc"))
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -207,14 +210,14 @@ class DetailsPane(QWidget):
 
     def _add_buttons(self, entry: CatalogEntry) -> None:
         pdf = artifact_path(entry.base_path, ".pdf")
-        open_btn = self._button(strings.BTN_OPEN_PDF, primary=True)
+        open_btn = self._button("Deschide PDF", primary=True)
         if "pdf" in entry.artifacts and pdf.exists():
             open_btn.clicked.connect(lambda: self.open_pdf_requested.emit(pdf))
         else:
             open_btn.setEnabled(False)
-            open_btn.setToolTip(strings.TOOLTIP_FILE_MISSING)
+            open_btn.setToolTip(_FILE_MISSING_TOOLTIP)
 
-        reveal_btn = self._button(strings.BTN_REVEAL)
+        reveal_btn = self._button("Arată în dosar")
         folder = Path(entry.base_path).parent
         if folder.exists():
             reveal_btn.clicked.connect(
@@ -222,7 +225,7 @@ class DetailsPane(QWidget):
             )
         else:
             reveal_btn.setEnabled(False)
-            reveal_btn.setToolTip(strings.TOOLTIP_FILE_MISSING)
+            reveal_btn.setToolTip(_FILE_MISSING_TOOLTIP)
 
         for btn in (open_btn, reveal_btn):
             self._layout.addWidget(btn)
@@ -238,9 +241,9 @@ class DetailsPane(QWidget):
         rule.setStyleSheet(f"color:{self._theme.border};")
         self._layout.addWidget(rule)
         for label, value in (
-            (strings.DETAIL_MESSAGE_ID, fmt.provenance(message_id)),
-            (strings.DETAIL_MESSAGE_TYPE, fmt.provenance(message_type)),
-            (strings.DETAIL_ARCHIVED_AT, fmt.archived_at(archived)),
+            ("message_id", fmt.provenance(message_id)),
+            ("tip mesaj", fmt.provenance(message_type)),
+            ("arhivat la", fmt.archived_at(archived)),
         ):
             row = QWidget()
             layout = QHBoxLayout(row)
@@ -268,13 +271,13 @@ class DetailsPane(QWidget):
         return label
 
     def _pill(self, direction: object) -> QLabel:
-        mapping = {
-            "received": (strings.PILL_RECEIVED, self._theme.accent),
-            "sent": (strings.PILL_SENT, self._theme.muted),
-            "failing": (strings.PILL_FAILED, self._theme.red),
+        colors = {
+            "received": self._theme.accent,
+            "sent": self._theme.muted,
+            "failing": self._theme.red,
         }
-        label_text, color = mapping.get(str(direction), ("", self._theme.muted))
-        pill = QLabel(label_text)
+        color = colors.get(str(direction), self._theme.muted)
+        pill = QLabel(fmt.direction_label(str(direction)))
         pill.setStyleSheet(f"color:{color}; font-size:11px; font-weight:700;")
         return pill
 

@@ -303,6 +303,44 @@ The companion is deliberately not a second way to *do* anything — it observes,
 it configures, and it delegates every mutation to the CLI. That keeps the
 archive's correctness properties (§3) entirely in one place.
 
+**The layout is elastic; the design size is the minimum.** The window resizes
+freely and every view follows its bounding box; 980×620 — the size the views
+were designed at — is the *minimum*, not the size. All of it is expressed
+through Qt layout stretch factors and size policies, never absolute geometry
+or `resizeEvent` math, so one rule set holds at every size. The rules assign
+each element one of two roles:
+
+- *Anchored* (fixed on at least one axis): the title bar spans full width at
+  fixed height; the sidebar keeps its fixed width and stretches vertically;
+  the details pane keeps its fixed width against the right edge (it is a
+  reading pane — widening it would only stretch line lengths); toolbar,
+  period row, footer and save bar are full-width, fixed-height bands whose
+  buttons/chips keep their natural size.
+- *Stretching* (absorbs the slack): exactly one element per page takes both
+  extra axes. On Facturi it is the catalog table — extra height shows more
+  rows, extra width feeds the Partener column, the only non-fixed column (the
+  rest are dates, sums, statuses of known width). Inside the toolbar the
+  search field is likewise the one horizontal absorber. On Setări the scroll
+  area takes the extra height (its scrollbar disappearing once the form
+  fits); inputs stretch horizontally within the form, whose content column is
+  capped at a comfortable reading width (~760px) and left-anchored beside the
+  fixed 150px label column — a path-template field spanning a maximised 4K
+  window helps nobody.
+
+Window geometry persists across launches through `QSettings` (an `anaf-sync`
+/ `tray` scope in the platform-native store — plist, registry, ini),
+deliberately *not* `config.toml`: geometry is UI state, not sync
+configuration, and a file the design promises to round-trip only on explicit
+saves must not churn on every resize. The window is created lazily and hidden
+on close, so within one tray session the size survives for free; across
+launches it is Qt's blessed pair — `saveGeometry()` in `closeEvent` (and on
+quit) and `restoreGeometry()` at construction — which also encodes maximised
+state and pulls a remembered position back onto a screen that still exists
+when monitors have detached. A missing or invalid blob falls back to the
+980×620 design size, and the minimum size holds regardless of what was
+stored. Tests point `QSettings` at a throwaway ini file so the suite never
+touches the real per-user store.
+
 **Config edits are round-trips, not rewrites.** The Setări form edits
 `config.toml` through tomlkit: it mutates only the keys the user changed and
 writes the document back atomically, so hand-written comments and layout
