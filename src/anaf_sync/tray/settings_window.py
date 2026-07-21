@@ -52,7 +52,6 @@ class SettingsWindow(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(_TITLE)
-        self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self.setMaximumSize(_MAX_WIDTH, _MAX_HEIGHT)
         self.setSizeGripEnabled(True)
         self._theme: Theme = current_theme()
@@ -108,3 +107,23 @@ class SettingsWindow(QDialog):
         self._theme = theme
         self.setStyleSheet(window_qss(theme))
         self._view.set_theme(theme)
+        self._apply_minimum_width()
+
+    def _apply_minimum_width(self) -> None:
+        """Never let the window be narrower than its un-shrinkable content.
+
+        `_MIN_WIDTH` is the design size, but it is not a promise the form can
+        keep everywhere: the variable reference is as wide as the platform's
+        mono font makes it, which is how Setări ended up with a horizontal
+        scrollbar on Windows at 760px (#1).
+
+        Measured *after* the stylesheet is applied, and re-measured on every
+        theme change, because the QSS is what sets the panel's font sizes and
+        paddings — reading the width before it lands understates the panel by
+        the better part of a hundred pixels. `ensurePolished` forces that
+        pending style work to happen now rather than at first paint.
+        """
+        self._view.ensurePolished()
+        self.setMinimumSize(
+            max(_MIN_WIDTH, self._view.minimum_width_hint()), _MIN_HEIGHT
+        )

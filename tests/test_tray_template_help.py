@@ -1,6 +1,5 @@
 """The variable reference panel: no drift, real renders, caret insertion."""
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -16,7 +15,7 @@ from anaf_sync.tray import settings_view as sv  # noqa: E402
 from anaf_sync.tray import store  # noqa: E402
 from anaf_sync.tray.flowgrid import WIDE_BREAKPOINT, group_column_count  # noqa: E402
 from anaf_sync.tray.preview import sample_context  # noqa: E402
-from anaf_sync.tray.settings_view import SettingsView  # noqa: E402
+from anaf_sync.tray.settings_view import _FORM_CHROME, SettingsView  # noqa: E402
 from anaf_sync.tray.template_help import (  # noqa: E402
     _SETTINGS_KEY,
     GROUPS,
@@ -27,20 +26,16 @@ from anaf_sync.tray.template_help import (  # noqa: E402
     variable_count,
 )
 
-#: The field column at the 760px minimum window: 760 less the form's 24px
-#: margins, the 150px label column and its 12px gutter, less the form scroll
-#: area's own bar. The panel must fit inside it or the form scrolls sideways.
-_FIELD_COLUMN_AT_MINIMUM = 760 - 48 - 150 - 12 - 16
 
-#: Both budgets above are pixel constants derived from Linux font metrics.
-#: Windows renders the same widgets wider (the panel measures 546 there, 12px
-#: over), so the assertions fail off-Linux even though the layout logic they
-#: guard is correct. The overflow is a real Windows bug — tracked in #1, which
-#: also covers re-deriving these numbers from live QFontMetrics — not something
-#: this skip fixes.
-_linux_font_metrics = pytest.mark.skipif(
-    sys.platform != "linux", reason="pixel budgets calibrated on Linux fonts (#1)"
-)
+def _narrowest(view: SettingsView) -> int:
+    """The width the window would refuse to shrink below, for this platform.
+
+    Deliberately measured rather than written down: the panel's floor is one
+    specifier chip, whose width is whatever the platform's mono font makes it.
+    The 760px constant this used to assume held on Linux and was 12px short on
+    Windows (#1).
+    """
+    return view.minimum_width_hint()
 
 
 @pytest.fixture()
@@ -137,31 +132,34 @@ def test_group_columns_share_the_artifact_breakpoint() -> None:
     assert group_column_count(WIDE_BREAKPOINT - 1) == 1
 
 
-@_linux_font_metrics
 def test_expanding_never_makes_the_form_scroll_sideways(
     _no_schedule: None, qtbot: object, tmp_path: Path
 ) -> None:
     """Regression: the specifier strip used to be an unwrappable row.
 
-    Four example chips side by side are ~1040px wide, so at the 760px minimum
-    window the panel's minimum width was 612 and the *whole Setări form* — path
-    field, artifact cards and all — grew a horizontal scrollbar the moment the
-    user expanded the reference.
+    Four example chips side by side are ~1040px wide, so at the minimum window
+    the panel's minimum width was 612 and the *whole Setări form* — path field,
+    artifact cards and all — grew a horizontal scrollbar the moment the user
+    expanded the reference.
+
+    Asserted at the narrowest width the window actually allows, which is now
+    derived from the panel rather than assumed to be 760 (#1) — so this holds
+    on Windows fonts as well as Linux ones.
     """
     config = tmp_path / "config.toml"
     write_default_config(config)
     view = SettingsView(state_path=tmp_path / "state.db", config_path=config)
     view._template_help._toggle.setChecked(True)
-    view.resize(760, 620)
+    width = _narrowest(view)
+    view.resize(width, 620)
     view.show()
 
     scroll = view.findChild(QScrollArea)
     assert scroll is not None
-    assert view._template_help.minimumSizeHint().width() <= _FIELD_COLUMN_AT_MINIMUM
+    assert view._template_help.minimumSizeHint().width() <= width - _FORM_CHROME
     assert scroll.horizontalScrollBar().maximum() == 0
 
 
-@_linux_font_metrics
 def test_the_list_scrolls_only_below_the_reflow_breakpoint(
     _no_schedule: None, qtbot: object, tmp_path: Path
 ) -> None:
@@ -175,18 +173,27 @@ def test_the_list_scrolls_only_below_the_reflow_breakpoint(
     config = tmp_path / "config.toml"
     write_default_config(config)
 
-    def scrolls(width: int) -> bool:
+    def build(width: int) -> SettingsView:
         view = SettingsView(state_path=tmp_path / "state.db", config_path=config)
         view._template_help._toggle.setChecked(True)
         view.resize(width, 780)
         view.show()
         QApplication.processEvents()
+        return view
+
+    def scrolls(view: SettingsView) -> bool:
         inner = view._template_help.findChild(QScrollArea)
         assert inner is not None
         return inner.verticalScrollBar().maximum() > 0
 
-    assert not scrolls(1200)  # 3-up: every variable visible at once
-    assert scrolls(760)  # 1-up: 15 rows cannot fit, and should not try
+    narrow = _narrowest(build(WIDE_BREAKPOINT))
+    # The premise of the narrow case: it is below the reflow breakpoint, so the
+    # list is 1-up. If a platform's fonts ever push the minimum past the
+    # breakpoint, fail here saying so rather than in a confusing assertion.
+    assert narrow < WIDE_BREAKPOINT
+
+    assert not scrolls(build(1200))  # 3-up: every variable visible at once
+    assert scrolls(build(narrow))  # 1-up: 15 rows cannot fit, and should not try
 
 
 def test_panel_defaults_to_collapsed(qtbot: object) -> None:

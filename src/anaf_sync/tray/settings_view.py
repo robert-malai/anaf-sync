@@ -81,6 +81,11 @@ _LABEL_WIDTH = 150
 _SLIDER_MAX_WIDTH = 480
 _HELP_MAX_WIDTH = 620
 
+#: Everything a row spends before the field column starts: the form's 24px
+#: margins either side, the label column, its 12px gutter, and the scroll
+#: area's own bar. Field column = form width less this.
+_FORM_CHROME = 48 + _LABEL_WIDTH + 12 + 16
+
 _DIR_LABEL = "Dosar arhivă"
 _NEEDS_INIT = "Rulați `anaf-sync init` pentru a crea un config.toml."
 
@@ -132,6 +137,25 @@ class SettingsView(QWidget):
             return []
         with Archive.open_readonly(self._state_path) as archive:
             return sorted(archive.distinct_cifs())
+
+    def minimum_width_hint(self) -> int:
+        """The narrowest this form can be drawn without scrolling sideways.
+
+        The variable reference is the one thing here that cannot shrink — its
+        specifier chips are fixed-size rendered text — and its width is a
+        function of the platform's mono font, not of any number we can pick.
+        Windows draws the same chips wider than Linux does, which is how the
+        form ended up with a horizontal scrollbar at the 760px minimum the
+        window used to hard-code (#1). So the window asks the form, and the
+        form asks the panel.
+
+        Returns 0 when the config could not be read: that branch shows a single
+        centred label and has no form to measure.
+        """
+        help_panel: TemplateHelp | None = getattr(self, "_template_help", None)
+        if help_panel is None:
+            return 0
+        return help_panel.minimum_content_width() + _FORM_CHROME
 
     # -- construction ---------------------------------------------------------
 

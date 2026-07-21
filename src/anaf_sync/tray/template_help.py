@@ -435,6 +435,26 @@ class TemplateHelp(QWidget):
         layout.addStretch(1)
         return chip
 
+    # -- measurement ----------------------------------------------------------
+
+    def minimum_content_width(self) -> int:
+        """The narrowest this panel can be drawn without clipping.
+
+        Takes `_card` into account even while it is hidden: a hidden widget
+        contributes nothing to its parent's minimum, and the form has to
+        reserve room for the state the user can toggle into, not the one it
+        happens to be in. Maxed with the widget's own minimum so the collapsed
+        header row is covered too.
+
+        The floor is one specifier chip plus the strip's key gutter: chips are
+        fixed-size rendered text and cannot wrap or elide, so how wide this is
+        depends entirely on the platform's mono font. That is why the form asks
+        instead of assuming a number (#1).
+        """
+        return int(
+            max(self._card.minimumSizeHint().width(), self.minimumSizeHint().width())
+        )
+
     # -- interactions ---------------------------------------------------------
 
     def _on_toggled(self, expanded: bool) -> None:

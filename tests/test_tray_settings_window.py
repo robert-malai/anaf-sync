@@ -15,6 +15,7 @@ from anaf_sync.tray.flowgrid import (  # noqa: E402
     SPACING,
     column_count,
 )
+from anaf_sync.tray.settings_view import _FORM_CHROME  # noqa: E402
 from anaf_sync.tray.settings_window import SettingsWindow  # noqa: E402
 from anaf_sync.tray.window import MainWindow  # noqa: E402
 
@@ -39,7 +40,11 @@ def test_setari_is_resizable_between_its_design_size_and_a_maximum(
 ) -> None:
     window = _window(tmp_path)
     qtbot.addWidget(window)
-    assert (window.minimumWidth(), window.minimumHeight()) == (760, 620)
+    # 760 is the design size and the floor, not an equality: a platform whose
+    # fonts render the variable reference wider raises the minimum so the form
+    # can never be dragged narrower than that panel (#1).
+    assert window.minimumWidth() >= 760
+    assert window.minimumHeight() == 620
     assert (window.maximumWidth(), window.maximumHeight()) == (1200, 780)
 
     window.resize(1000, 700)  # freely resizable in between
@@ -47,6 +52,37 @@ def test_setari_is_resizable_between_its_design_size_and_a_maximum(
 
     window.resize(4000, 4000)  # a form past its ceiling is only empty space
     assert (window.width(), window.height()) == (1200, 780)
+
+
+def test_minimum_width_always_fits_the_variable_reference(
+    qtbot: object, tmp_path: Path
+) -> None:
+    """The invariant behind #1, asserted on whatever fonts are running here."""
+    window = _window(tmp_path)
+    qtbot.addWidget(window)
+    panel = window._view._template_help
+    assert panel.minimum_content_width() <= window.minimumWidth() - _FORM_CHROME
+
+
+def test_a_wider_reference_panel_raises_the_window_minimum(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Windows case, reproducible on any platform.
+
+    Windows renders the specifier chips wider than Linux does, which is what
+    pushed the panel past the field column at the hard-coded 760px minimum.
+    Faking a panel that wide is the only way to exercise that here — otherwise
+    the bug is invisible until CI runs the tray suite on Windows.
+    """
+    window = _window(tmp_path)
+    qtbot.addWidget(window)
+    panel = window._view._template_help
+    monkeypatch.setattr(panel, "minimum_content_width", lambda: 900)
+
+    window.set_theme(window._theme)  # re-measures
+
+    assert window.minimumWidth() == 900 + _FORM_CHROME
+    assert window.minimumWidth() > 760
 
 
 def test_facturi_has_no_maximum(qtbot: object, tmp_path: Path) -> None:
