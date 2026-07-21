@@ -1,6 +1,6 @@
 [project]
 name = "anaf-sync"
-version = "0.2.1"
+version = "0.2.2"
 description = "Scheduled local archiver for RO e-Factura invoices, built on anafpy."
 readme = "README.md"
 license = "Apache-2.0"
