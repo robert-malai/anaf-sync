@@ -149,13 +149,28 @@ class SettingsView(QWidget):
         window used to hard-code (#1). So the window asks the form, and the
         form asks the panel.
 
+        Two independent floors, whichever is larger:
+
+        * the reference panel plus the form chrome. The panel lives *inside* the
+          scroll area, so it never reaches this widget's own minimum — it just
+          overflows and produces the horizontal scrollbar #1 is about.
+        * this widget's layout minimum, which is dominated by the save bar. That
+          bar sits *outside* the scroll area, so its note and two buttons set a
+          hard floor no scrolling can absorb.
+
+        Counting only the first is why an earlier attempt still asked for widths
+        the form silently clamped up.
+
         Returns 0 when the config could not be read: that branch shows a single
         centred label and has no form to measure.
         """
         help_panel: TemplateHelp | None = getattr(self, "_template_help", None)
         if help_panel is None:
             return 0
-        return help_panel.minimum_content_width() + _FORM_CHROME
+        return max(
+            help_panel.minimum_content_width() + _FORM_CHROME,
+            self.minimumSizeHint().width(),
+        )
 
     # -- construction ---------------------------------------------------------
 

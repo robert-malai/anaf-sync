@@ -25,6 +25,23 @@ from anaf_sync.tray.template_help import (  # noqa: E402
     rendered_samples,
     variable_count,
 )
+from anaf_sync.tray.theme import current_theme  # noqa: E402
+
+
+def _themed(state_path: Path, config_path: Path) -> SettingsView:
+    """Build the form the way `SettingsWindow` does — themed.
+
+    Not a detail: the QSS pins the form's font sizes in px, so an unthemed view
+    inherits the platform's default font instead. On Windows that inflates the
+    save bar — which sits *outside* the form's scroll area and therefore sets
+    the hard minimum width — to ~1264px, so `resize()` to anything narrower is
+    silently clamped up and the panel is handed a width that reflows to 3
+    columns. Measuring an unthemed view answers a question production never
+    asks (#1).
+    """
+    view = SettingsView(state_path=state_path, config_path=config_path)
+    view.set_theme(current_theme())
+    return view
 
 
 def _narrowest(view: SettingsView) -> int:
@@ -148,7 +165,7 @@ def test_expanding_never_makes_the_form_scroll_sideways(
     """
     config = tmp_path / "config.toml"
     write_default_config(config)
-    view = SettingsView(state_path=tmp_path / "state.db", config_path=config)
+    view = _themed(tmp_path / "state.db", config)
     view._template_help._toggle.setChecked(True)
     width = _narrowest(view)
     view.resize(width, 620)
@@ -174,10 +191,15 @@ def test_the_list_scrolls_only_below_the_reflow_breakpoint(
     write_default_config(config)
 
     def build(width: int) -> SettingsView:
-        view = SettingsView(state_path=tmp_path / "state.db", config_path=config)
+        view = _themed(tmp_path / "state.db", config)
         view._template_help._toggle.setChecked(True)
         view.resize(width, 780)
         view.show()
+        # A resize below the form's hard minimum is clamped silently, and the
+        # test then measures a width it never asked for — which is exactly how
+        # the Windows failure hid: it believed it had a 772px form and was
+        # actually looking at 1264px, wide enough to reflow to 3 columns.
+        assert view.width() == width, f"resize clamped to {view.width()}, not {width}"
         QApplication.processEvents()
         return view
 
