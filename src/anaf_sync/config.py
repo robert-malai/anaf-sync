@@ -231,17 +231,21 @@ directory = "~/Facturi"
 #
 #   number          invoice number (BT-1)
 #   issue_date      issue date (a real date - format with strftime specs)
+#   issue_month     Romanian month name of the issue date ("iulie")
 #   due_date        due date, when present
 #   currency        invoice currency code
-#   total           payable amount
 #   kind            "invoice" or "credit_note"
 #   direction       "received" or "sent"
 #   cif             the CIF this sync run queried
-#   seller_name     seller legal name        seller_cif    seller CIF (digits)
-#   buyer_name      buyer legal name         buyer_cif     buyer CIF (digits)
 #   partner_name    the other party's name   partner_cif   the other party's CIF
 #   message_id      ANAF download id         request_id    ANAF upload id
 #   message_type    ANAF message type        created       message creation time
+#   created_month   Romanian month name of the creation time
+#
+# Everything above except cif, direction, message_id, request_id, message_type,
+# created and created_month comes from the invoice XML, so it renders "unknown"
+# for messages that carry none (error files, buyer messages) - build a template
+# that still separates those, not one that collapses them onto each other.
 #
 # Values are sanitised for the filesystem; "/" in the template creates folders.
 # Do not add an extension - each artifact appends its own (.zip, .xml, ...).

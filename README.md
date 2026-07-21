@@ -122,12 +122,17 @@ artifacts = ["zip", "pdf"]        # și: xml, signature, metadata
 Șabloanele folosesc sintaxa `str.format` din Python peste contextul facturii:
 `number`, `issue_date` / `due_date` (date reale — specificatorii `strftime`
 funcționează), `issue_month` / `created_month` (numele lunii în română:
-`iulie`), `currency`, `total`, `kind`, `direction`, `cif`,
-`seller_name`/`seller_cif`, `buyer_name`/`buyer_cif`,
+`iulie`), `currency`, `kind`, `direction`, `cif`,
 `partner_name`/`partner_cif` (*cealaltă* parte, indiferent de direcție),
 `message_id`, `request_id`, `message_type`, `created`. Valorile substituite
 sunt sanitizate pentru sistemul de fișiere; un `/` literal în șablon creează
 foldere; fiecare artefact își adaugă propria extensie.
+
+Primele variabile din listă se completează din XML-ul facturii, deci pentru
+mesajele fără XML (fișiere de eroare, mesaje de la cumpărător) devin `unknown`.
+Doar `cif`, `direction`, `message_id`, `request_id`, `message_type`, `created`
+și `created_month` există întotdeauna — un șablon construit exclusiv din
+celelalte adună toate aceste mesaje pe aceeași cale.
 
 Orice variabilă acceptă o conversie de capitalizare: `{issue_month!u}` →
 `IULIE`, `{issue_month!c}` → `Iulie`, `{issue_month!l}` → `iulie` (implicit
@@ -159,6 +164,42 @@ Aceasta înregistrează sincronizarea în planificatorul nativ al sistemului —
 Task Scheduler pe Windows, un timer systemd de utilizator pe Linux
 (`loginctl enable-linger $USER` ca să ruleze și fără sesiune deschisă),
 launchd pe macOS. Fără daemon propriu.
+
+## Aplicația din bara de sistem (opțional)
+
+Un companion desktop discret afișează starea arhivei printr-o iconiță în bara
+de sistem, ca să vezi din timp când o sincronizare se strică — înainte ca ANAF
+să șteargă mesajele după 60 de zile. Culoarea punctului de stare înseamnă:
+
+- **verde** — arhiva este la zi;
+- **galben** — necesită atenție: o factură eșuează repetat sau a fost declarată
+  cu întârziere;
+- **roșu** — sincronizarea nu funcționează (de obicei autentificarea ANAF a
+  expirat — rulează `anafpy auth login`).
+
+Din meniu poți porni o sincronizare, deschide dosarul arhivei, răsfoi facturile
+arhivate și edita configurația — fără să atingi `config.toml` manual (deși
+rămâne editabil manual oricând). Aplicația doar citește arhiva și scrie
+`config.toml`; orice descărcare o face tot `anaf-sync sync`.
+
+Instalare (adaugă dependențele grafice PySide6):
+
+```bash
+pip install "anaf-sync[tray]"
+anaf-sync-tray                 # pornește aplicația
+anaf-sync tray install         # pornire automată la logare (idempotent)
+anaf-sync tray status
+anaf-sync tray remove
+```
+
+Alternativ, descarcă un pachet gata compilat de la secțiunea Releases (nu
+necesită Python). Pachetele nu sunt semnate deocamdată, așa că la prima
+pornire sistemul afișează un avertisment: pe macOS deschide-l cu click‑dreapta
+→ „Open" o singură dată; pe Windows alege „More info" → „Run anyway".
+
+Pe Linux/GNOME iconițele din bară au nevoie de extensia AppIndicator
+(„AppIndicator and KStatusNotifierItem Support"); pe majoritatea celorlalte
+medii desktop funcționează direct.
 
 ## Jurnale
 

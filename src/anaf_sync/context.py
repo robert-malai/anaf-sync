@@ -169,6 +169,16 @@ def build_context(
 ) -> dict[str, Any]:
     """The full variable set available to the path template.
 
+    Deliberately narrower than :class:`_Invoice`. ``total`` is not here because a
+    path *names* a document and an amount is a fact about it — one ANAF restates
+    and the archive path would move. ``seller_*``/``buyer_*`` are not here
+    because they are the same two parties as ``partner_*`` and ``cif`` addressed
+    by role instead of by relationship: under ``direction = "both"`` a
+    ``{seller_name}`` template files the user's own company as the folder for
+    every invoice they sent, while ``partner_name`` is correct in both
+    directions by construction. Both still exist on :class:`_Invoice` — they
+    feed ``partner_*`` and :func:`catalog_fields`.
+
     Args:
         item: the message-list entry the download originated from.
         view: the parsed flat invoice, when the content was readable UBL.
@@ -189,12 +199,7 @@ def build_context(
         "issue_month": _ro_month(inv.issue_date),
         "due_date": inv.due_date,
         "currency": inv.currency,
-        "total": inv.total,
         "kind": inv.kind,
-        "seller_name": inv.seller_name,
-        "seller_cif": inv.seller_cif,
-        "buyer_name": inv.buyer_name,
-        "buyer_cif": inv.buyer_cif,
         "partner_name": inv.partner_name,
         "partner_cif": inv.partner_cif,
     }
@@ -207,7 +212,9 @@ def catalog_fields(
 
     Best-effort/``None`` throughout, projected from the same sources as
     :func:`build_context`. ``total`` is narrowed from ``Decimal`` to ``float``
-    for the catalog's ``REAL`` column.
+    for the catalog's ``REAL`` column. ``created`` is ANAF's ``data_creare``
+    (when the message entered SPV), keyed as the engine maps it onto
+    ``CatalogEntry.created_at``.
     """
     inv = _project(item, view)
     return {
@@ -218,4 +225,5 @@ def catalog_fields(
         "total": float(inv.total) if inv.total is not None else None,
         "currency": inv.currency,
         "message_type": item.message_type,
+        "created": _parse_created(item.created_at),
     }

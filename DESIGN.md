@@ -65,13 +65,16 @@ also the **permanent catalog** the future UI (§9) browses — partner, date,
 number, direction, total — which a window-bounded, pruned JSON file could
 never be. `messages` is keyed by ANAF message id, with `base_path` a `UNIQUE`
 column (the path registry, below) and best-effort catalog columns projected
-from the UBL view. `failures` and a `meta` (`schema_version`) table round it
-out. On open, a fresh DB gets the schema written; an existing one with a
-mismatched `schema_version` raises `ValueError` (the version check is the only
-forward-compatibility hook — no migration framework, and no user data to
-migrate). A corrupt DB raises `sqlite3.DatabaseError`, which crashes the run
-by design; deleting the file is safe recovery, costing at most a 60-day
-re-download.
+from the UBL view. `failures` and a `meta` (`schema_version`, and the desktop
+companion's `last_run` blob — §10) table round it out. On open, a fresh DB gets
+the current schema; an existing one is migrated forward by small, additive
+steps (v1 → v2 added the nullable `created_at` column via `ALTER TABLE`, so old
+rows simply keep NULL — the archive is a permanent catalog, never rebuilt), and
+an unrecognised `schema_version` raises `ValueError`. Migrations stay additive
+by design: there is no migration *framework* and no destructive rewrite, only
+column adds a permanent catalog can absorb in place. A corrupt DB raises
+`sqlite3.DatabaseError`, which crashes the run by design; deleting the file is
+safe recovery, costing at most a 60-day re-download.
 
 Mechanics (`engine.py` + `state.py`):
 
@@ -255,10 +258,219 @@ Mirrors anafpy's hybrid model:
   guessing them. Full-text search (SQLite **FTS5**) and a `reindex` command to
   backfill/rebuild catalog columns from the on-disk artifacts are the natural
   next steps there.
-- **Purge awareness, not purge alerts.** A message that fails for 60 days
-  straight ages out of ANAF's window and is lost. Failures are visible in
-  every run's report and exit code; an explicit "about to age out" warning
-  would be a cheap, worthwhile addition.
+- **Purge awareness.** A message that fails for 60 days straight ages out of
+  ANAF's window and is lost. Beyond the per-run report and exit code,
+  `anaf-sync status` now prints an "expires from SPV in *N* days" countdown per
+  failing message (`health.days_until_purge`), so an operator sees a persistent
+  failure closing in before it is too late. The desktop companion (§10) surfaces
+  the same signal as its amber/red states.
 - **No archive verification command.** `anaf-sync verify` (re-hash artifacts
   against state, validate MF signatures via `validate_signature`) is a
   natural extension.
+
+## 10. The desktop companion
+
+A small system-tray application (`anaf_sync.tray`, an optional `tray` extra —
+PySide6, GUI-free core stays intact) makes silent sync failures visible before
+ANAF's 60-day purge, which a scheduled CLI job cannot do on its own. Its shape
+follows directly from the invariants above:
+
+- **Read-only observer.** The tray never downloads, uploads, deletes, or
+  rewrites archive files. It reads the catalog through `Archive.open_readonly`
+  (a `mode=ro` connection; WAL from §3 is what lets it query while a scheduled
+  sync writes) and edits only `config.toml`, via a tomlkit round-trip that
+  preserves the user's comments and formatting. Every actual sync is performed
+  by spawning the same `anaf-sync sync` CLI — one code path for the schedule and
+  the button alike, one `filelock` (§3) serialising both.
+- **Three states, derived not stored** (`health.derive_health`, pure and
+  tested). Any failure trace → **warn** (amber); a crashed last run, an
+  auth/config-family failure, or a schedule that has gone silent past twice its
+  interval → **err** (red); otherwise **ok** (green). `err` wins over `warn`.
+  The inputs are the failure traces (§3) and the new **last-run record**
+  (`RunRecord`, a JSON blob under `meta.last_run`) the CLI writes on every exit
+  path — success, caught boundary error (with the exception's kind, so an
+  expired token reads as red rather than amber), and the system-mode crash
+  excepthook. Bookkeeping never masks the run: a failed `record_run` is logged
+  and swallowed.
+- **Schema v2 for the delay signal.** Flagging an invoice *declarată cu
+  întârziere* needs both of its dates — the issue date (already stored) and when
+  it entered SPV (ANAF's `data_creare`). The latter was parsed but dropped; v2
+  persists it as `created_at` so `health.upload_delay_days` can compare them
+  against a single `DELAY_THRESHOLD_DAYS` constant. The migration is the
+  additive `ALTER TABLE` described in §3.
+
+The companion is deliberately not a second way to *do* anything — it observes,
+it configures, and it delegates every mutation to the CLI. That keeps the
+archive's correctness properties (§3) entirely in one place.
+
+**Two windows, not one stack.** Facturi and Setări are separate top-level
+windows rather than pages of a sidebar-switched stack. The split follows from
+what each one is: the catalog is a surface the user leaves open and glances at,
+while Setări is a bounded editing task with an explicit commit boundary —
+*Salvează modificările* writes `config.toml`, *Renunță* (and Esc, and the
+window's close button, all one reject slot) discards. Inside a single window
+those two verbs had no honest target. Cancelling a form the user reached by
+clicking a nav item either strands them on a reverted page or silently throws
+them back to a list they never asked for; and a save bar pinned under a stack
+implies the whole window is unsaved, which the catalog half never is. As
+separate windows the answer is the one every desktop already teaches: the
+editor closes and the thing behind it is still there. Nothing outside the
+Setări window depends on its pending state, so closing with unsaved edits needs
+no confirmation prompt — reopening re-reads `config.toml` and a cancelled
+session leaves no residue. Setări opens from the tray's *Setări…* item and from
+a toolbar button in Facturi, and carries its own geometry key and its own,
+smaller size range — 760×620 to 1200×780, against the catalog's 980×620
+minimum and no maximum at all — because the two have opposite appetites for
+space, which the next paragraphs make precise.
+
+**The layout is elastic; the design size is the minimum.** Each window resizes
+freely and follows its bounding box; the size it was designed at is the
+*minimum*, not the size (Setări also has a maximum — below). All of it is expressed through Qt layout stretch
+factors and size policies, never absolute geometry or `resizeEvent` math, so
+one rule set holds at every size. The rules assign each element one of two
+roles:
+
+- *Anchored* (fixed on at least one axis): the details pane keeps its fixed
+  width against the right edge (it is a reading pane — widening it would only
+  stretch line lengths); toolbar, period row, footer and save bar are
+  full-width, fixed-height bands whose buttons/chips keep their natural size.
+- *Stretching* (absorbs the slack): exactly one element per window takes both
+  extra axes. On Facturi it is the catalog table — extra height shows more
+  rows, extra width feeds the Partener column, the only stretch section (the
+  rest are dates, sums, statuses of known width). Inside the toolbar the
+  search field is likewise the one horizontal absorber. On Setări the scroll
+  area takes the extra height (its scrollbar disappearing once the form fits)
+  and the field column takes the extra width beside the fixed 150px label
+  column.
+
+**Setări has a maximum size; Facturi does not.** The catalog is unbounded — more
+width and height are always more invoices and longer partner names, so the only
+ceiling is the screen. A configuration form is the opposite: it holds a fixed
+amount of content, and past the point where all of it is visible without
+scrolling, every additional pixel is empty space with a save bar stranded at the
+bottom of it. So Setări is clamped (`setMaximumSize`) at 1200×780. The height is
+derived, not chosen: 780 is where the form stops scrolling at its *narrowest*
+allowed width, which makes the promise simple — at maximum height nothing
+scrolls, whatever the width. The width is derived too, from the widest thing
+the form has to lay out: five artifact cards on one row (below), which also
+leaves a default-length path template and its rendered preview each on a single
+line.
+
+Within that range the fields genuinely use the space rather than sitting at a
+fixed cap: the archive directory row, the template field and its preview each
+span the full field column, and the artifact cards widen with it.
+
+The cards also **re-flow on column count, between exactly two layouts**: 3-up
+(two rows, 3 + 2) and 5-up (one row), switching when the field column can give
+every card ~170px. Four columns are excluded on purpose — five cards in four
+columns strand `metadata` alone on a second row, and 3 + 2 and 5 are the only
+clean partitions of five. The 170px floor is why the switch is worth having at
+all: it fires when the one-row layout is an *improvement*, not as soon as it is
+geometrically possible (at 150px per card the descriptions wrap to three lines
+and 5-up is worse than the 3-up it replaced). This is what sets the maximum
+width: 1100 only just fits five cards, 1200 makes them legible at ~191px with
+every description but `metadata` on one line. The grid always fills the field
+column — a per-card maximum width would leave a ragged right edge mid-range,
+breaking the alignment with the full-width fields directly above it. In Qt this
+is a small `QLayout` subclass, not `resizeEvent` arithmetic, so it stays inside
+the rule the elastic layout is built on.
+
+Two controls deliberately opt out of stretching. The `lookback_days` slider caps at 480px: 60 steps stretched across 900px
+is pixel-hunting, and a slider that long reads as a progress bar. Help text caps
+at 620px because it is prose, and prose has a reading width no window size
+changes. Radios, the frequency select and the directory-picker button keep their
+natural size, as controls sized to their content should.
+
+**The user re-proportions the table; the layout still holds.** The four
+narrow columns are `Interactive` sections and Partener stays `Stretch`, so
+dragging any header boundary moves that one boundary and Partener absorbs the
+difference — the table can never be dragged wider than its viewport or leave a
+gap at the right edge, and the elastic rule above survives untouched. Which
+columns deserve the space is a judgement only the user can make (a shop whose
+partners have long legal names wants Partener wide; someone reconciling by
+invoice number wants Număr wide), and it is cheap to offer precisely because
+the stretch section makes every drag a zero-sum trade. Section sizes are UI
+state and persist with the geometry, below.
+
+Window geometry persists across launches through `QSettings` (an `anaf-sync`
+/ `tray` scope in the platform-native store — plist, registry, ini),
+deliberately *not* `config.toml`: geometry is UI state, not sync
+configuration, and a file the design promises to round-trip only on explicit
+saves must not churn on every resize. Each window owns a separate key — they
+are separate windows with different natural sizes, and remembering one at the
+other's dimensions would be a bug, not a convenience — and the table's header
+layout rides along in a third (`QHeaderView.saveState()`), for the same reason
+and by the same rule. Windows are created lazily and hidden on close, so within
+one tray session sizes survive for free; across launches it is Qt's blessed
+pair — `saveGeometry()` in `closeEvent` (and on quit) and `restoreGeometry()`
+at construction — which also encodes maximised state and pulls a remembered
+position back onto a screen that still exists when monitors have detached. A
+missing or invalid blob falls back to that window's design size, and its
+minimum size holds regardless of what was stored. Tests point `QSettings` at a
+throwaway ini file so the suite never touches the real per-user store.
+
+**Dates read the way Romanians write them: `zz.ll.aaaa`.** Every operator-facing
+date in the companion — the catalog's Data column, the details pane, the delay
+and failure panels, the custom-period fields (`QDateEdit` with
+`displayFormat("dd.MM.yyyy")`) — renders as `18.07.2026`. The abbreviated form
+the design started from, `18 iul.`, is shorter but drops the year in an archive
+that spans them: two rows twelve months apart read identically, and the 60-day
+window that makes a date urgent is invisible without it. The numeric form is
+also what makes the tabular numerals worth having — every date the same width,
+digits aligned in a column, sortable by eye. ISO stays strictly internal: it is
+what SQLite stores and orders by, and `{issue_date:%Y-%m-%d}` inside the path
+template is a *filename* convention chosen so directory listings sort
+chronologically (§4) — a sort key and a display format are different things,
+and the UI never borrows one for the other.
+
+**Config edits are round-trips, not rewrites.** The Setări form edits
+`config.toml` through tomlkit: it mutates only the keys the user changed and
+writes the document back atomically, so hand-written comments and layout
+survive byte-for-byte. Every edit is validated against the real `SyncConfig`
+*before* the write, so an invalid form leaves the file untouched, and the
+template preview renders through the production `PathTemplate` (never a
+reimplementation) so it can never disagree with what a sync would write.
+Changing the schedule frequency re-installs through `scheduling.py`'s own
+functions; the tray never shells out to `schtasks`/`systemctl`/`launchctl`
+itself.
+
+**The followed CUIs are an input, not a discovered set.** The Setări form takes
+the CUI list as free entry: the user adds and removes entries, each validated
+by the same rule as `config.py` (strip, upper-case, drop an `RO` prefix, must
+be digits), with at least one surviving — `config.toml` is the source of truth
+and the form is simply its editor. anafpy *does* expose an authorization
+inventory (`SpvClient.list_messages(60).authorized_cuis`, surfaced as
+`anafpy spv status` — it is the only endpoint that returns it), but it is
+deliberately **not** wired in as the source of this list. It rides the SPV
+certificate cookie session rather than the `ANAFPY_*` OAuth credentials the
+rest of anaf-sync is built on (§2); that session expires within days, and
+re-establishing it fires the certificate 2FA prompt — an interactive,
+macOS/Windows-only choreography. ANAF also omits the identity fields entirely
+when the queried window holds no messages, so the inventory can come back empty
+for a perfectly valid session. A config editor that could not populate its own
+company field without a PIN prompt would be a worse editor, so discovery stays
+out of the write path. CUIs already seen in the archive are offered as
+**autocomplete suggestions** on the entry field — a convenience over the
+catalog, never a gate on what may be typed.
+
+**Autostart is the platform's job too** (`autostart.py`, mirroring §7's stance
+on scheduling): a macOS LaunchAgent (`RunAtLoad`, `ProcessType Interactive`, no
+`KeepAlive` — a tray the user quits should stay quit), a Windows `HKCU\…\Run`
+value, and an XDG `~/.config/autostart/*.desktop` entry, driven by
+`anaf-sync tray install|remove|status`. The payload builders are pure functions
+returning the plist dict / desktop text / registry string, so the format is
+unit-tested without touching the real system; only install/remove/status make
+the platform calls. The launched command is resolved exactly as `scheduling.py`
+resolves `anaf-sync` — the console script, or `sys.executable` when frozen — so
+autostart works from a venv install and from a bundle alike.
+
+**Bundling** (`packaging/tray.spec`, one PyInstaller spec with platform
+conditionals) freezes the app into a menu-bar-only macOS `.app` (`LSUIElement`,
+so no Dock icon), a windowed Windows exe, and a Linux one-dir binary, excluding
+the Qt modules the tray never touches to keep the size down. `release-tray.yml`
+runs the full gates with the `tray` extra (the PySide6 code exercised headless
+via `QT_QPA_PLATFORM=offscreen`) before building on each OS. Code signing and
+notarization are deliberately out of scope for now — the bundles are unsigned
+and trigger the usual first-run OS warnings, documented in the README with the
+right-click-open workaround; signing is follow-up work before the bundles are
+recommended for wide distribution.

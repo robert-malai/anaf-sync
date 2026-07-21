@@ -3,6 +3,11 @@
 # additionally run on macOS and Windows — path handling and the scheduler
 # layer (schtasks / systemd user / launchd) are platform-dispatched and their
 # shared code must stay green everywhere.
+#
+# The Linux leg installs the optional `tray` extra so the PySide6 UI code is
+# exercised (headless, QT_QPA_PLATFORM=offscreen) and mypy can read PySide6's
+# stubs; the macOS/Windows legs stay core-only, which also proves the package
+# still builds and tests without the extra (the tray tests skip via importorskip).
 name: CI
 
 on:
@@ -28,7 +33,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - name: Sync dependencies
+      # PySide6's offscreen platform plugin needs these shared libraries.
+      - name: Qt system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3
+      - name: Sync dependencies (Linux — with tray extra)
+        if: runner.os == 'Linux'
+        run: uv sync --extra tray --group qt
+      - name: Sync dependencies (macOS/Windows — core only)
+        if: runner.os != 'Linux'
         run: uv sync
       - name: Tests
         run: uv run pytest -q --cov --cov-report=xml
@@ -41,7 +56,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
-      # The static gates are platform-independent; run them once per Python.
+      # The static gates are platform-independent; run them once per Python on
+      # the Linux leg, which has PySide6 installed (mypy reads its stubs).
       - name: Ruff lint
         if: runner.os == 'Linux'
         run: uv run ruff check src tests

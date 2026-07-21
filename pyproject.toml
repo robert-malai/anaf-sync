@@ -1,6 +1,6 @@
 [project]
 name = "anaf-sync"
-version = "0.1.4"
+version = "0.2.0"
 description = "Scheduled local archiver for RO e-Factura invoices, built on anafpy."
 readme = "README.md"
 license = "Apache-2.0"
@@ -19,7 +19,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "anafpy>=0.4.1",
+    "anafpy>=0.5.1",
     "cyclopts>=3.14",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
@@ -31,11 +31,22 @@ dependencies = [
     "filelock>=3.13",
 ]
 
+[project.optional-dependencies]
+# The desktop tray companion (anaf_sync.tray). Optional so the core CLI stays
+# GUI-free: `pip install "anaf-sync[tray]"` pulls Qt only when the UI is wanted.
+tray = [
+    "pyside6>=6.7",
+    "tomlkit>=0.13",
+]
+
 [project.urls]
 Homepage = "https://github.com/robert-malai/anaf-sync"
 
 [project.scripts]
 anaf-sync = "anaf_sync.cli:main"
+# The guard in `anaf_sync/tray/__init__.py`: prints an install hint (never a
+# traceback) when the `tray` extra / PySide6 is absent, then delegates to app.
+anaf-sync-tray = "anaf_sync.tray:main"
 
 [dependency-groups]
 dev = [
@@ -47,6 +58,13 @@ dev = [
     "ruff>=0.6",
     "black>=24.0",
 ]
+# pytest-qt lives in its own group, not `dev`: it hard-errors at startup when no
+# Qt binding is installed, so it must only be present alongside the `tray` extra.
+# Full dev / the tray CI job: `uv sync --extra tray --group qt`. A plain
+# `uv sync` gets neither, and the tray tests skip via `importorskip` on whichever
+# part of the extra they need — "PySide6" for the Qt views, "tomlkit" for the
+# Qt-free config round-trip.
+qt = ["pytest-qt>=4.4"]
 
 [build-system]
 requires = ["hatchling"]
@@ -74,12 +92,24 @@ select = [
     "N",   # pep8-naming
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Qt overrides (rowCount, fetchMore, paintCell, …) must keep their camelCase
+# names to bind to the C++ virtuals; the naming rule cannot apply in the tray.
+"src/anaf_sync/tray/*.py" = ["N802"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_unused_ignores = true
 warn_return_any = true
 disallow_untyped_defs = true
+
+# The tray extra is optional: keep `mypy src` green whether or not PySide6 /
+# tomlkit are installed. Our own defs stay fully typed; Qt is treated as Any at
+# the edges (the plan allows isolated ignores only at signal/slot friction).
+[[tool.mypy.overrides]]
+module = ["PySide6.*", "tomlkit.*", "shiboken6.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
