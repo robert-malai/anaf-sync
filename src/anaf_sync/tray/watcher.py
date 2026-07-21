@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
 
 __all__ = ["StateWatcher"]
 
@@ -27,10 +27,6 @@ class StateWatcher(QObject):
     def __init__(self, state_path: Path, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._state_path = state_path
-        # Imported lazily-per-instance is unnecessary; module import already
-        # required PySide6 to be present (guarded by the package __init__).
-        from PySide6.QtCore import QFileSystemWatcher
-
         self._watcher = QFileSystemWatcher(self)
         self._watcher.fileChanged.connect(self._on_event)
         self._watcher.directoryChanged.connect(self._on_event)

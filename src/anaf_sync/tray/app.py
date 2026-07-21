@@ -46,7 +46,7 @@ from .theme import (
 from .watcher import StateWatcher
 from .window import MainWindow
 
-__all__ = ["TrayApp", "main", "run"]
+__all__ = ["TrayApp", "run"]
 
 _MENU_WIDTH = 300
 _DOT = 9  # status-dot diameter, px
@@ -323,8 +323,3 @@ def run() -> int:
         return int(app.exec())
     finally:
         lock.release()
-
-
-def main() -> int:
-    """Alias kept for symmetry; the package ``__init__`` is the guard entry."""
-    return run()

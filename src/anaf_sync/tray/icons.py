@@ -12,11 +12,10 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygonF
 
+from ..health import HealthState
 from .theme import LIGHT, Theme, status_color
 
 __all__ = ["status_icon"]
-
-HealthState = str
 
 #: Rendered sizes; the OS picks the one that fits the tray/menu-bar slot.
 _SIZES = (16, 22, 32)
@@ -31,14 +30,14 @@ def status_icon(state: HealthState, *, theme: Theme | None = None) -> QIcon:
     return icon
 
 
-def _render(state: str, size: int, theme: Theme) -> QPixmap:
+def _render(state: HealthState, size: int, theme: Theme) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     try:
         _paint_document(painter, size, QColor(theme.text))
-        _paint_dot(painter, size, QColor(status_color(theme, state)))  # type: ignore[arg-type]
+        _paint_dot(painter, size, QColor(status_color(theme, state)))
     finally:
         painter.end()
     return pixmap

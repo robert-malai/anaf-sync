@@ -6,6 +6,7 @@ import datetime as dt
 import logging
 import sys
 import traceback
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 from typing import Annotated, Literal
@@ -197,13 +198,6 @@ def _launcher(
 
 
 @app.command
-def version() -> int:
-    """Print the anaf-sync version."""
-    print(f"anaf-sync {__version__}")
-    return 0
-
-
-@app.command
 def init(
     *,
     config: ConfigOption = None,
@@ -280,7 +274,7 @@ async def sync(
     if not dry_run:
         _record_run(
             state_path,
-            outcome="failed" if report.failures else "ok",
+            outcome="ok" if report.ok else "failed",
             report=report,
             error=(
                 f"{len(report.failures)} download(s) failed"
@@ -308,7 +302,7 @@ async def sync(
         + (f" | missing id {report.missing_id}" if report.missing_id else "")
         + (f" | would download {report.would_download}" if dry_run else "")
     )
-    if report.failures:
+    if not report.ok:
         for message_id, error in report.failures:
             print(f"failed {message_id}: {error}", file=sys.stderr)
         return 1
@@ -324,23 +318,29 @@ def status(*, config: ConfigOption = None) -> int:
     credentials = "ok" if auth.client_id and auth.client_secret else "MISSING"
     print(f"auth:     ANAFPY_CLIENT_ID/SECRET {credentials}")
     now = dt.datetime.now(dt.UTC)
-    with Archive.open(default_state_path()) as archive:
-        print(f"state:    {archive.path} ({archive.count} messages archived)")
-        last = archive.last_run()
-        if last is not None:
-            summary = f"{last.error} ({last.error_kind})" if last.error else "ok"
-            print(
-                f"last run: {last.finished_at:%Y-%m-%d %H:%M} {last.outcome} — "
-                f"listed {last.listed}, new {last.archived}, "
-                f"failures {last.failures}: {summary}"
-            )
-        for message_id, failure in archive.failures.items():
-            days = days_until_purge(failure, now)
-            print(
-                f"failing:  {message_id} — {failure.attempts} run(s) since "
-                f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
-            )
-            print(f"          expires from SPV in {days} day(s)")
+    state_path = default_state_path()
+    # Read-only: a diagnostic command must not create the state dir/schema as
+    # a side effect on a machine that has never synced.
+    if not state_path.exists():
+        print(f"state:    {state_path} (no archive yet)")
+    else:
+        with Archive.open_readonly(state_path) as archive:
+            print(f"state:    {archive.path} ({archive.count} messages archived)")
+            last = archive.last_run()
+            if last is not None:
+                summary = f"{last.error} ({last.error_kind})" if last.error else "ok"
+                print(
+                    f"last run: {last.finished_at:%Y-%m-%d %H:%M} {last.outcome} — "
+                    f"listed {last.listed}, new {last.archived}, "
+                    f"failures {last.failures}: {summary}"
+                )
+            for message_id, failure in archive.failures.items():
+                days = days_until_purge(failure, now)
+                print(
+                    f"failing:  {message_id} — {failure.attempts} run(s) since "
+                    f"{failure.first_failed_at:%Y-%m-%d}: {failure.error}"
+                )
+                print(f"          expires from SPV in {days} day(s)")
     if config_path.exists():
         # status is the diagnostic command — a broken config must be reported
         # in-line, never crash it with a traceback.
@@ -353,6 +353,16 @@ def status(*, config: ConfigOption = None) -> int:
             print(f"output:   {cfg.output.resolved_directory}")
             print(f"template: {cfg.output.template}")
     print(f"schedule: {schedule_status()}")
+    return 0
+
+
+def _print_or_fail(action: Callable[[], str]) -> int:
+    """Print the action's one-line outcome; map its domain error to exit 1."""
+    try:
+        print(action())
+    except (ScheduleError, AutostartError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -371,23 +381,13 @@ def schedule_install_cmd(
     Uses Task Scheduler on Windows, a systemd user timer on Linux, and
     launchd on macOS.
     """
-    try:
-        print(schedule_install(every=every, daily_at=daily_at))
-    except ScheduleError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    return _print_or_fail(lambda: schedule_install(every=every, daily_at=daily_at))
 
 
 @schedule_app.command(name="remove")
 def schedule_remove_cmd() -> int:
     """Remove the scheduled job."""
-    try:
-        print(schedule_uninstall())
-    except ScheduleError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    return _print_or_fail(schedule_uninstall)
 
 
 @schedule_app.command(name="status")
@@ -400,23 +400,13 @@ def schedule_status_cmd() -> int:
 @tray_app.command(name="install")
 def tray_install_cmd() -> int:
     """Enable the desktop tray companion at login (idempotent)."""
-    try:
-        print(autostart_install())
-    except AutostartError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    return _print_or_fail(autostart_install)
 
 
 @tray_app.command(name="remove")
 def tray_remove_cmd() -> int:
     """Disable tray autostart."""
-    try:
-        print(autostart_remove())
-    except AutostartError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    return _print_or_fail(autostart_remove)
 
 
 @tray_app.command(name="status")

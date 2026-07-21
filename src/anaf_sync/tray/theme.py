@@ -11,6 +11,8 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Literal
 
+from ..health import HealthState
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -26,15 +28,12 @@ __all__ = [
     "window_qss",
 ]
 
-HealthState = Literal["ok", "warn", "err"]
-
 
 @dataclasses.dataclass(frozen=True)
 class Theme:
     """One colour scheme (all values are ``#rrggbb`` strings)."""
 
     name: Literal["light", "dark"]
-    desk: str
     window_bg: str
     panel_bg: str
     border: str
@@ -59,7 +58,6 @@ class Theme:
 # The token table (handoff §Design Tokens), verbatim.
 LIGHT = Theme(
     name="light",
-    desk="#dfe4ea",
     window_bg="#f4f6f8",
     panel_bg="#ffffff",
     border="#d8dee6",
@@ -83,7 +81,6 @@ LIGHT = Theme(
 
 DARK = Theme(
     name="dark",
-    desk="#14181d",
     window_bg="#1b2128",
     panel_bg="#232a33",
     border="#323c48",
@@ -106,7 +103,6 @@ DARK = Theme(
 )
 
 # Radii (handoff §Design Tokens), in px — shared across both schemes.
-RADIUS_WINDOW = 10
 RADIUS_PANEL = 9
 RADIUS_BUTTON = 6
 RADIUS_PILL = 9

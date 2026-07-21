@@ -32,7 +32,7 @@ from tenacity import (
 )
 
 from .config import Artifact, Direction, SyncConfig
-from .context import build_context, catalog_fields, direction_of
+from .context import direction_of, project_message
 from .state import Archive, CatalogEntry
 from .template import PathTemplate
 
@@ -205,27 +205,27 @@ async def _archive_message(
     direction = direction_of(item)
     assert direction is not None  # non-invoice messages are filtered upstream
     message = await _download_with_retry(client, item.id)
-    context = build_context(item, message.view, cif=cif)
+    projection = project_message(item, message.view, cif=cif)
     base = state.claim_base(
-        config.output.resolved_directory / Path(template.render(context)),
+        config.output.resolved_directory / Path(template.render(projection.context)),
         item.id,
     )
     base.parent.mkdir(parents=True, exist_ok=True)
 
     written = []
     for artifact in config.output.artifacts:
-        path = await _write_artifact(artifact, base, message, item, context, public)
+        path = await _write_artifact(
+            artifact, base, message, item, projection.context, public
+        )
         if path is not None:
             written.append(artifact.value)
-    fields = catalog_fields(item, message.view)
     return CatalogEntry(
         message_id=item.id,
         cif=cif,
         direction=direction,
         base_path=base.as_posix(),
         artifacts=written,
-        created_at=fields.pop("created"),
-        **fields,
+        **projection.catalog,
     )
 
 

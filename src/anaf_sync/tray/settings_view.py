@@ -49,10 +49,10 @@ from ..scheduling import status as schedule_status
 from ..state import Archive
 from . import config_io
 from . import format as fmt
-from .flowgrid import ArtifactGrid
+from .flowgrid import ArtifactGrid, clear_layout
 from .preview import render_preview
 from .template_help import TemplateHelp, template_help_qss
-from .theme import LIGHT, MONO_FONT_FAMILY, Theme
+from .theme import MONO_FONT_FAMILY, Theme
 
 __all__ = ["SettingsView"]
 
@@ -151,7 +151,6 @@ class SettingsView(QWidget):
         super().__init__(parent)
         self._state_path = state_path
         self._config_path = config_path
-        self._theme: Theme = LIGHT
         self._cif_buttons: dict[str, QToolButton] = {}
         self._artifact_boxes: dict[str, QCheckBox] = {}
         self._artifact_cards: dict[str, QFrame] = {}
@@ -644,13 +643,7 @@ class SettingsView(QWidget):
         """
         layout = self.layout()
         if layout is not None:
-            while layout.count():
-                item = layout.takeAt(0)
-                if item is None:
-                    continue
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
+            clear_layout(layout)
         self._cif_buttons.clear()
         self._artifact_boxes.clear()
         self._artifact_cards.clear()
@@ -661,7 +654,6 @@ class SettingsView(QWidget):
     # -- theming --------------------------------------------------------------
 
     def set_theme(self, theme: Theme) -> None:
-        self._theme = theme
         self.setStyleSheet(_settings_qss(theme))
 
     def _restyle(self, widget: QWidget) -> None:

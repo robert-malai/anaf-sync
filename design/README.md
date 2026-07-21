@@ -1,4 +1,9 @@
-# Handoff: anaf-sync desktop companion UI (PySide6)
+# Design reference: anaf-sync desktop companion UI (PySide6)
+
+> **Status: built and shipped** (v0.2.0, `src/anaf_sync/tray/`). This file was
+> the implementation handoff for the mockup and is kept as the visual
+> reference behind it. Where it and the code disagree, the code and
+> [DESIGN.md](../DESIGN.md) §10 win.
 
 ## Overview
 UI for **anaf-sync**, a cross-platform tray tool that archives Romanian e-Factura invoices from ANAF to disk on a schedule. Three deliverables: a tray menu (3 status states), a "Facturi" window (invoice catalog with details pane), and a **separate** "Setări" window (config editor over `config.toml`). Read-only over the archive; its core job is making silent failures visible before ANAF's 60-day purge.
@@ -6,7 +11,7 @@ UI for **anaf-sync**, a cross-platform tray tool that archives Romanian e-Factur
 Facturi and Setări are two independent top-level windows, **not** pages of a sidebar-switched stack: the catalog is a surface the user leaves open, Setări is a bounded editing task with an explicit commit boundary (save writes, cancel closes).
 
 ## About the Design Files
-`mockup/mockup.html` (open in a browser, keep `support.js` next to it) is a **design reference built in HTML** — a clickable prototype showing intended look and behavior. It is NOT production code. The task is to **recreate it in PySide6** using Qt idioms and the existing `anaf_sync` package (`config.py`, `state.py`) as the data layer. On-screen anchors: `#1a` tray menu, `#1b` Facturi, `#1c` Setări.
+`mockup/mockup.html` (open in a browser, keep `support.js` next to it) is a **design reference built in HTML** — a clickable prototype showing intended look and behavior. It is NOT production code; it was recreated in PySide6 using Qt idioms with the existing `anaf_sync` package (`config.py`, `state.py`) as the data layer. On-screen anchors: `#1a` tray menu, `#1b` Facturi, `#1c` Setări.
 
 ## Fidelity
 **High-fidelity.** Colors, spacing, typography, copy, and states are final. Recreate faithfully, but prefer native Qt controls where they match (menus, scrollbars, selects, calendar) over pixel-cloning browser widgets.
@@ -67,7 +72,7 @@ Items (all states): "Sincronizează acum" / "Facturi arhivate… 128" (count rig
 ### 3. Setări window (760×620 minimum, 1200×780 maximum)
 A **second top-level window**, native title "Setări — anaf-sync", opened from the tray's "Setări…" item or the Facturi toolbar button. Facturi stays open and untouched behind it, with its own geometry key.
 
-**Resizable between 760×620 and 1200×780** (`setMinimumSize` + `setMaximumSize`), and the form re-flows across that whole range:
+**Resizable between 760×620 and 1200×780**, and the form re-flows across that whole range. (As built, 760 is a *floor*, not a constant: the window derives its minimum width from the variable reference panel's measured width, so on wide-font platforms it sits higher — see issue #1 and DESIGN.md §10.) The re-flow rules:
 - 150px label column, fixed at every size. The field column takes **all** remaining width — no 520px cap.
 - *Dosar arhivă* (path field stretching, "Alege…" fixed at the right), *Șablon de denumire*, and the preview box below it each span the full field column. At maximum width a default-length template and its rendered preview each fit on one line, which is the point of allowing the extra width at all.
 - *Fișiere salvate* **re-flows on column count**: 3-up (two rows, 3 + 2) until each card would drop below ~170px, then all five on one row — the switch lands at a field column of 882px, i.e. a window of ~1096px. **Four columns never occur**: five cards in four columns strands `metadata` alone on a second row, so the allowed set is {3, 5} only. The grid always fills the field column (no per-card max width — capping it leaves a ragged right edge that breaks alignment with the full-width fields above). At 1200 each card is ~191px and every description but `metadata` fits on one line.
@@ -164,17 +169,17 @@ Scrollable form, three sections with uppercase 11px faint headers, separated by 
   company as the folder for every invoice you sent). `{partner_name}` is correct in
   both directions by construction, which is why `context.py` derives it.
 
-  **Implemented.** `context.build_context` and `preview.sample_context` dropped
-  those five; `_Invoice`/`_project` keep all five (they still feed `partner_*`,
-  and `catalog_fields` still exports `total` for the Facturi table), so only the
-  template-facing dict shrank. `tests/test_tray_template_help.py` asserts the
-  panel's name set equals `set(sample_context())`, and `test_tray_preview.py`
-  asserts that set equals `set(build_context(...))` — so adding a variable to
-  `context.py` without documenting it fails the suite instead of quietly
-  producing another stale list. This **breaks existing `config.toml` files** that
-  use any of the five (they now raise `TemplateError`), which is acceptable
-  pre-1.0 given the default template uses none of them, but needs a CHANGELOG
-  line.
+  **Implemented.** The template context built by `context.project_message` and
+  `preview.sample_context` dropped those five; the projection still derives
+  `partner_*` from the seller/buyer parties and still exports `total` in its
+  catalog columns for the Facturi table, so only the template-facing dict
+  shrank. `tests/test_tray_template_help.py` asserts the panel's name set
+  equals `set(sample_context())`, and `test_tray_preview.py` asserts that set
+  equals the real template context — so adding a variable to `context.py`
+  without documenting it fails the suite instead of quietly producing another
+  stale list. This **broke `config.toml` files** that used any of the five
+  (they now raise `TemplateError`) — accepted pre-1.0, since the default
+  template uses none of them.
 - *Fișiere salvate* → `output.artifacts`: checkbox cards in a grid that re-flows 3-up ⇄ 5-up with the field column (never 4 — see above). Names stay in English mono; descriptions Romanian 11px faint: **zip** "arhiva semnată originală" ✓, **pdf** "redarea oficială ANAF" ✓, **xml** "XML-ul UBL al facturii", **signature** "semnătura MF detașată", **metadata** "fișier JSON cu detaliile mesajului". Checked card: accent border + accent-soft bg.
 
 **Programare**
@@ -187,7 +192,7 @@ Scrollable form, three sections with uppercase 11px faint headers, separated by 
 
 ## Interactions & Behavior
 - Table row click → selects (sel bg) and swaps details pane content; failing row swaps to the red panel; delayed rows add the amber panel.
-- Delay highlight is conditional: delayed = (upload date − issue date) > threshold (default 5 days; make it a constant or config-derived).
+- Delay highlight is conditional: delayed = (upload date − issue date) > threshold (5 days — the `health.DELAY_THRESHOLD_DAYS` constant; promoting it to a config key stays parked until asked).
 - Filter chips, period chips, calendar range, CIF chips, radios, artifact cards, slider, select: all stateful as described; filters combine (direction ∧ period).
 - Column resize: dragging a header boundary re-proportions that column and Partener absorbs the difference; the boundary tracks the pointer in both directions. Widths survive the session and the next launch.
 - Hovers: menu items → accent bg; table rows → hover bg; header boundaries → accent separator. No animations required; instant state changes are fine (desktop feel).

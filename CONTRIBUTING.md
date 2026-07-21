@@ -9,16 +9,21 @@ Everything developer-facing — this file, [DESIGN.md](DESIGN.md),
 ## Setup
 
 ```bash
-uv sync                    # installs deps, including the dev group
-uv run anaf-sync --help    # run the CLI from the venv
+uv sync --extra tray --group qt    # installs deps, dev group, and the tray/Qt stack
+uv run anaf-sync --help            # run the CLI from the venv
 ```
+
+The `--extra tray --group qt` part matters: it is what CI runs. A plain
+`uv sync` still works for core-only changes, but every `tests/test_tray_*.py`
+file then skips via `importorskip` and mypy checks the tray modules with
+PySide6 absent — so "all green" locally can still fail CI.
 
 ## Quality gates
 
 All four must pass before a change is considered done:
 
 ```bash
-uv run pytest -q
+QT_QPA_PLATFORM=offscreen uv run pytest -q    # offscreen lets the Qt suite run headless
 uv run ruff check src tests
 uv run black --check src tests    # black writes; ruff checks
 uv run mypy src                   # strict typing — must stay clean

@@ -16,7 +16,7 @@ are pure, so both rules are unit-tested without Qt geometry.
 from __future__ import annotations
 
 from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtWidgets import QLayout, QLayoutItem, QSizePolicy, QWidget
+from PySide6.QtWidgets import QLayout, QLayoutItem, QWidget
 
 __all__ = [
     "MIN_COLUMN_WIDTH",
@@ -25,6 +25,7 @@ __all__ = [
     "ArtifactGrid",
     "ColumnGrid",
     "GroupGrid",
+    "clear_layout",
     "column_count",
     "group_column_count",
 ]
@@ -169,7 +170,12 @@ class GroupGrid(ColumnGrid):
         return group_column_count(width)
 
 
-def stretchable(widget: QWidget) -> QWidget:
-    """Let ``widget`` be widened by the grid instead of sitting at its hint."""
-    widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-    return widget
+def clear_layout(layout: QLayout) -> None:
+    """Remove and delete every widget in ``layout`` (for rebuild-in-place views)."""
+    while layout.count():
+        item = layout.takeAt(0)
+        if item is None:
+            continue
+        widget = item.widget()
+        if widget is not None:
+            widget.deleteLater()

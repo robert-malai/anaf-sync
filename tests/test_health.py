@@ -6,6 +6,7 @@ from anaf_sync.health import (
     DELAY_THRESHOLD_DAYS,
     days_until_purge,
     derive_health,
+    is_delayed,
     upload_delay_days,
 )
 from anaf_sync.state import FailureRecord, RunRecord
@@ -37,24 +38,18 @@ def test_days_until_purge_from_first_failure() -> None:
     assert days_until_purge(_failure(first), _NOW) == 9
 
 
-def test_days_until_purge_prefers_created_when_given() -> None:
-    first = _NOW - dt.timedelta(days=51)  # would give 9
-    created = _NOW - dt.timedelta(days=58)  # tighter: 60 - 58 = 2
-    assert days_until_purge(_failure(first), _NOW, created=created) == 2
-
-
 def test_days_until_purge_goes_negative_past_the_window() -> None:
     first = _NOW - dt.timedelta(days=70)
     assert days_until_purge(_failure(first), _NOW) == -10
 
 
-def test_days_until_purge_tolerates_naive_created() -> None:
+def test_days_until_purge_tolerates_naive_timestamps() -> None:
     naive = dt.datetime(2026, 7, 1, 9, 0)  # no tzinfo — treated as UTC
     # purge = 2026-08-30 09:00; now = 2026-07-20 12:00 → 40 whole days.
-    assert days_until_purge(_failure(_NOW), _NOW, created=naive) == 40
+    assert days_until_purge(_failure(naive), _NOW) == 40
 
 
-# -- upload_delay_days --------------------------------------------------------
+# -- upload_delay_days / is_delayed -------------------------------------------
 
 
 def test_upload_delay_days_none_when_either_missing() -> None:
@@ -70,11 +65,15 @@ def test_upload_delay_days_counts_whole_days() -> None:
 
 def test_delay_threshold_boundary() -> None:
     # Exactly 5 days is NOT delayed; 6 is (delayed = delay > threshold).
-    five = upload_delay_days(dt.date(2026, 7, 1), dt.datetime(2026, 7, 6, 0, 0))
-    six = upload_delay_days(dt.date(2026, 7, 1), dt.datetime(2026, 7, 7, 0, 0))
-    assert five == DELAY_THRESHOLD_DAYS
-    assert five is not None and not (five > DELAY_THRESHOLD_DAYS)
-    assert six is not None and six > DELAY_THRESHOLD_DAYS
+    issue = dt.date(2026, 7, 1)
+    at_threshold = dt.datetime(2026, 7, 1 + DELAY_THRESHOLD_DAYS, 0, 0)
+    assert is_delayed(issue, at_threshold) is False
+    assert is_delayed(issue, at_threshold + dt.timedelta(days=1)) is True
+
+
+def test_is_delayed_false_when_either_date_missing() -> None:
+    assert is_delayed(None, _NOW) is False
+    assert is_delayed(dt.date(2026, 7, 1), None) is False
 
 
 # -- derive_health: state rules ----------------------------------------------
@@ -84,7 +83,7 @@ def test_ok_when_last_run_ok_and_no_failures() -> None:
     health = derive_health(_ok_run(), {}, _NOW)
     assert health.state == "ok"
     assert health.failure_count == 0
-    assert health.worst_failure is None
+    assert health.worst_days_left is None
     assert health.auth_broken is False
 
 
@@ -121,23 +120,6 @@ def test_failed_run_without_auth_kind_is_not_err_by_itself() -> None:
     assert derive_health(failed, {}, _NOW).auth_broken is False
 
 
-def test_err_when_schedule_went_stale() -> None:
-    interval = dt.timedelta(hours=6)
-    stale_run = _ok_run(_NOW - dt.timedelta(hours=13))  # > 2× interval
-    assert derive_health(stale_run, {}, _NOW, interval=interval).state == "err"
-
-
-def test_fresh_run_within_interval_is_not_stale() -> None:
-    interval = dt.timedelta(hours=6)
-    recent = _ok_run(_NOW - dt.timedelta(hours=5))
-    assert derive_health(recent, {}, _NOW, interval=interval).state == "ok"
-
-
-def test_no_last_run_is_not_stale() -> None:
-    # A fresh install (never synced) shows ok, not err.
-    assert derive_health(None, {}, _NOW, interval=dt.timedelta(hours=6)).state == "ok"
-
-
 def test_err_wins_over_warn() -> None:
     crashed = RunRecord(finished_at=_NOW, outcome="crashed")
     failures = {"m1": _failure(_NOW)}
@@ -146,29 +128,13 @@ def test_err_wins_over_warn() -> None:
     assert health.failure_count == 1
 
 
-# -- derive_health: worst-failure selection ----------------------------------
+# -- derive_health: worst-failure countdown -----------------------------------
 
 
-def test_worst_failure_is_the_one_closest_to_purging() -> None:
+def test_worst_days_left_is_the_smallest_countdown() -> None:
     failures = {
         "young": _failure(_NOW - dt.timedelta(days=5)),  # 55 days left
-        "old": _failure(_NOW - dt.timedelta(days=51), attempts=6),  # 9 days left
+        "old": _failure(_NOW - dt.timedelta(days=51)),  # 9 days left
     }
-    health = derive_health(
-        _ok_run(),
-        failures,
-        _NOW,
-        partners={"old": "TERMOENERGIA S.R.L."},
-    )
-    assert health.worst_failure is not None
-    assert health.worst_failure.message_id == "old"
-    assert health.worst_failure.partner_name == "TERMOENERGIA S.R.L."
-    assert health.worst_failure.days_left == 9
-    assert health.worst_failure.attempts == 6
-
-
-def test_worst_failure_partner_none_when_unknown() -> None:
-    failures = {"m1": _failure(_NOW - dt.timedelta(days=1))}
     health = derive_health(_ok_run(), failures, _NOW)
-    assert health.worst_failure is not None
-    assert health.worst_failure.partner_name is None
+    assert health.worst_days_left == 9

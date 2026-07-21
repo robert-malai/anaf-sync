@@ -25,11 +25,7 @@ from PySide6.QtCore import (
     Qt,
 )
 
-from ..health import (
-    DELAY_THRESHOLD_DAYS,
-    days_until_purge,
-    upload_delay_days,
-)
+from ..health import days_until_purge, is_delayed
 from ..state import Archive, CatalogEntry, FailureRecord
 from .format import EM_DASH, money, short_date
 
@@ -74,7 +70,6 @@ class CatalogModel(QAbstractTableModel):
     DelayedRole = int(Qt.ItemDataRole.UserRole) + 2
     MessageIdRole = int(Qt.ItemDataRole.UserRole) + 3
     DirectionRole = int(Qt.ItemDataRole.UserRole) + 4
-    DateRole = int(Qt.ItemDataRole.UserRole) + 5
 
     _COLUMNS = ("Data", "Număr", "Partener", "Direcție", "Total")
 
@@ -92,6 +87,7 @@ class CatalogModel(QAbstractTableModel):
         self._failing: list[FailureRow] = []
         self._rows: list[CatalogEntry] = []
         self._total = 0
+        self._problem_count = 0
         self.reload()
 
     # -- public API -----------------------------------------------------------
@@ -120,13 +116,12 @@ class CatalogModel(QAbstractTableModel):
         return self._total
 
     def problem_count(self) -> int:
-        """Failing + delayed messages across the whole archive (for the chip)."""
-        if not self._state_path.exists():
-            return 0
-        with Archive.open_readonly(self._state_path) as archive:
-            failing = len(archive.failures)
-            delayed = sum(1 for e in self._scan(archive) if _is_delayed(e))
-        return failing + delayed
+        """Failing + delayed messages across the whole archive (for the chip).
+
+        Computed once per :meth:`_load` under the same connection, so footer
+        refreshes never re-open or re-scan the archive.
+        """
+        return self._problem_count
 
     # -- QAbstractTableModel --------------------------------------------------
 
@@ -181,17 +176,21 @@ class CatalogModel(QAbstractTableModel):
     def _load(self) -> None:
         if not self._state_path.exists():
             self._failing, self._rows, self._total = [], [], 0
+            self._problem_count = 0
             return
         with Archive.open_readonly(self._state_path) as archive:
             self._failing = self._build_failing(archive)
             if self._filters.problems_only:
                 self._rows = [e for e in self._scan(archive) if _is_delayed(e)]
                 self._total = len(self._rows)
+                delayed = len(self._rows)
             else:
                 self._rows = archive.catalog(
                     **self._query_kwargs(), limit=_PAGE, offset=0
                 )
                 self._total = archive.catalog_count(**self._query_kwargs())
+                delayed = sum(1 for e in self._scan(archive) if _is_delayed(e))
+            self._problem_count = len(archive.failures) + delayed
 
     def _build_failing(self, archive: Archive) -> list[FailureRow]:
         if not self._show_failing():
@@ -246,8 +245,6 @@ class CatalogModel(QAbstractTableModel):
             return _is_delayed(entry)
         if role == self.MessageIdRole:
             return entry.message_id
-        if role == self.DateRole:
-            return entry.issue_date
         return None
 
     def _failing_data(self, row: FailureRow, col: int, role: int) -> Any:
@@ -267,11 +264,8 @@ class CatalogModel(QAbstractTableModel):
             return False
         if role == self.MessageIdRole:
             return row.message_id
-        if role == self.DateRole:
-            return row.record.first_failed_at.date()
         return None
 
 
 def _is_delayed(entry: CatalogEntry) -> bool:
-    delay = upload_delay_days(entry.issue_date, entry.created_at)
-    return delay is not None and delay > DELAY_THRESHOLD_DAYS
+    return is_delayed(entry.issue_date, entry.created_at)

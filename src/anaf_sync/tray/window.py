@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 
 from ..config import default_state_path
 from . import store
-from .calendar import RangeCalendar
+from .calendar import RangeCalendar, to_date
 from .delegates import PAD_EDGE, PAD_X, CatalogDelegate
 from .details import DetailsPane
 from .models import CatalogFilters, CatalogModel
@@ -323,8 +323,8 @@ class MainWindow(QMainWindow):
     def _on_date_edit(self) -> None:
         if not self._date_from.isVisible():
             return
-        self._period_from = _qdate_to_date(self._date_from.date())
-        self._period_to = _qdate_to_date(self._date_to.date())
+        self._period_from = to_date(self._date_from.date())
+        self._period_to = to_date(self._date_to.date())
         self._calendar.set_range(self._period_from, self._period_to)
         self._apply_filters()
 
@@ -389,10 +389,6 @@ def _section_width(metrics: QFontMetrics, col: int) -> int:
     left = PAD_EDGE if col == 0 else PAD_X
     right = PAD_EDGE if col == _LAST_COL else PAD_X
     return content + left + right
-
-
-def _qdate_to_date(qdate: QDate) -> dt.date:
-    return dt.date(qdate.year(), qdate.month(), qdate.day())
 
 
 def _month_end(day: dt.date) -> dt.date:

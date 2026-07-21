@@ -20,11 +20,12 @@ keep its own copy. The goals, in order:
 4. **Windows and Linux first-class** (macOS comes along for free — it is the
    development machine).
 
-Non-goals: uploading/filing invoices, a GUI, multi-tenant server operation,
-OCR, bookkeeping integration. The archive is plain files; downstream tools
-take it from there. A local browse/search UI over the archive catalog is on
-the roadmap (§9) — the SQLite store (§3) already records what it will need —
-but nothing here queries or serves that catalog yet.
+Non-goals: uploading/filing invoices, a GUI for *creating or mutating*
+anything, multi-tenant server operation, OCR, bookkeeping integration. The
+archive is plain files; downstream tools take it from there. The desktop
+companion (§10) does add a read-only browse UI over the archive catalog the
+SQLite store (§3) records — but it observes and configures, never a second
+way to change the archive.
 
 ## 2. Position in the anafpy ecosystem
 
@@ -206,7 +207,10 @@ has been archived — and now must not forget the catalog either.
 `anaf-sync schedule install` registers `anaf-sync sync` with the native
 scheduler; there is no daemon, no long-running process, no internal cron:
 
-- **Windows** — Task Scheduler via `schtasks` (interval → `/SC MINUTE|HOURLY|DAILY /MO n`, `--daily-at` → `/SC DAILY /ST`).
+- **Windows** — Task Scheduler via `schtasks` (sub-day intervals →
+  `/SC MINUTE /MO n`, whole days → `/SC DAILY /MO n`, `--daily-at` →
+  `/SC DAILY /ST`; anything over a day that is not a whole number of days is
+  rejected rather than rounded).
 - **Linux** — systemd **user** units (`anaf-sync.timer` + `.service`,
   `Persistent=true` so missed runs fire on wake; `loginctl enable-linger`
   documented for logged-out operation).
@@ -251,13 +255,12 @@ Mirrors anafpy's hybrid model:
 - **Sequential downloads.** Deliberate: ANAF enforces daily call quotas and
   rate limits, and a nightly batch is not latency-sensitive. Concurrency is
   the first knob to turn if volumes ever demand it.
-- **Archive UI over the catalog.** The SQLite store (§3) already records the
-  catalog tier (partner, date, number, direction, total, currency) the future
-  browse/search UI needs; the schema is the commitment, but no read/query
-  interface exists yet — it waits for the UI to define its needs rather than
-  guessing them. Full-text search (SQLite **FTS5**) and a `reindex` command to
-  backfill/rebuild catalog columns from the on-disk artifacts are the natural
-  next steps there.
+- **Catalog search depth.** The desktop companion's Facturi window (§10) is
+  the browse UI over the catalog tier the SQLite store (§3) records: it pages
+  through `Archive.open_readonly` with SQL-side filtering (`catalog` /
+  `catalog_count`). Full-text search (SQLite **FTS5**) and a `reindex` command
+  to backfill/rebuild catalog columns from the on-disk artifacts are the
+  natural next steps there.
 - **Purge awareness.** A message that fails for 60 days straight ages out of
   ANAF's window and is lost. Beyond the per-run report and exit code,
   `anaf-sync status` now prints an "expires from SPV in *N* days" countdown per
@@ -283,9 +286,9 @@ follows directly from the invariants above:
   by spawning the same `anaf-sync sync` CLI — one code path for the schedule and
   the button alike, one `filelock` (§3) serialising both.
 - **Three states, derived not stored** (`health.derive_health`, pure and
-  tested). Any failure trace → **warn** (amber); a crashed last run, an
-  auth/config-family failure, or a schedule that has gone silent past twice its
-  interval → **err** (red); otherwise **ok** (green). `err` wins over `warn`.
+  tested). Any failure trace → **warn** (amber); a crashed last run or an
+  auth/config-family failure → **err** (red); otherwise **ok** (green). `err`
+  wins over `warn`.
   The inputs are the failure traces (§3) and the new **last-run record**
   (`RunRecord`, a JSON blob under `meta.last_run`) the CLI writes on every exit
   path — success, caught boundary error (with the exception's kind, so an
@@ -319,9 +322,12 @@ Setări window depends on its pending state, so closing with unsaved edits needs
 no confirmation prompt — reopening re-reads `config.toml` and a cancelled
 session leaves no residue. Setări opens from the tray's *Setări…* item and from
 a toolbar button in Facturi, and carries its own geometry key and its own,
-smaller size range — 760×620 to 1200×780, against the catalog's 980×620
-minimum and no maximum at all — because the two have opposite appetites for
-space, which the next paragraphs make precise.
+smaller size range — a 760×620 design minimum (the width floor is *derived*:
+the window asks the form, whose narrowest measurable element is the variable
+reference panel, so on wide-font platforms the minimum sits above 760 — #1)
+up to a 1200×780 maximum, against the catalog's 980×620 minimum and no
+maximum at all — because the two have opposite appetites for space, which the
+next paragraphs make precise.
 
 **The layout is elastic; the design size is the minimum.** Each window resizes
 freely and follows its bounding box; the size it was designed at is the

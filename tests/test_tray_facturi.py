@@ -108,27 +108,9 @@ def test_problem_count_counts_failing_plus_delayed(tmp_path: Path) -> None:
     assert model.problem_count() == 2  # 1 failing + 1 delayed
 
 
-# -- model: delayed boundary + paging ----------------------------------------
-
-
-def _delayed(issue: dt.date, created: dt.datetime) -> bool:
-    from anaf_sync.tray.models import _is_delayed
-
-    entry = CatalogEntry(
-        message_id="x",
-        cif="1",
-        direction="received",
-        base_path="p",
-        artifacts=[],
-        issue_date=issue,
-        created_at=created,
-    )
-    return _is_delayed(entry)
-
-
-def test_delayed_boundary_exactly_five_days_is_not_delayed(tmp_path: Path) -> None:
-    assert _delayed(dt.date(2026, 7, 1), dt.datetime(2026, 7, 6)) is False  # 5 days
-    assert _delayed(dt.date(2026, 7, 1), dt.datetime(2026, 7, 7)) is True  # 6 days
+# -- model: paging ------------------------------------------------------------
+# (The delayed 5/6-day boundary itself is pinned in test_health.py, on
+# `health.is_delayed` — the single rule the model and details pane share.)
 
 
 def test_fetch_more_pages_the_catalog(tmp_path: Path) -> None:

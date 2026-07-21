@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from anaf_sync import autostart
+from anaf_sync import scheduling
 from anaf_sync.autostart import (
     AutostartError,
     linux_desktop_entry,
@@ -56,7 +56,8 @@ def test_tray_command_resolves_console_script(
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     script = tmp_path / "anaf-sync-tray"
     script.write_text("#!/bin/sh\n")
-    monkeypatch.setattr(autostart.shutil, "which", lambda _name: str(script))
+    # The resolver is shared with scheduling.py, so the seam lives there.
+    monkeypatch.setattr(scheduling.shutil, "which", lambda _name: str(script))
     assert tray_command() == [str(script.resolve())]
 
 
@@ -64,7 +65,7 @@ def test_tray_command_raises_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(sys, "frozen", False, raising=False)
-    monkeypatch.setattr(autostart.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(scheduling.shutil, "which", lambda _name: None)
     monkeypatch.setattr(sys, "executable", str(tmp_path / "python"))
     with pytest.raises(AutostartError, match="anaf-sync-tray"):
         tray_command()

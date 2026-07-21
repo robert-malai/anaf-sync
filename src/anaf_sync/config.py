@@ -21,14 +21,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
-    "APP_NAME",
     "Artifact",
     "AuthSettings",
     "Direction",
     "OutputConfig",
     "SyncConfig",
     "default_config_path",
-    "default_env_path",
     "default_state_path",
     "load_config",
     "write_default_config",
@@ -242,10 +240,11 @@ directory = "~/Facturi"
 #   message_type    ANAF message type        created       message creation time
 #   created_month   Romanian month name of the creation time
 #
-# Everything above except cif, direction, message_id, request_id, message_type,
-# created and created_month comes from the invoice XML, so it renders "unknown"
-# for messages that carry none (error files, buyer messages) - build a template
-# that still separates those, not one that collapses them onto each other.
+# Everything above except cif, direction, message_id, request_id and
+# message_type comes from the invoice XML, so it renders "unknown" for messages
+# that carry none (error files, buyer messages); created / created_month come
+# from ANAF's listing and can (rarely) be "unknown" too. Build a template that
+# still separates those, not one that collapses them onto each other.
 #
 # Values are sanitised for the filesystem; "/" in the template creates folders.
 # Do not add an extension - each artifact appends its own (.zip, .xml, ...).

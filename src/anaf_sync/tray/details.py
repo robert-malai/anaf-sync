@@ -17,15 +17,15 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLayout,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ..health import DELAY_THRESHOLD_DAYS, upload_delay_days
+from ..health import DELAY_THRESHOLD_DAYS, is_delayed, upload_delay_days
 from ..state import CatalogEntry
 from . import format as fmt
+from .flowgrid import clear_layout
 from .models import FailureRow
 from .theme import LIGHT, MONO_FONT_FAMILY, RADIUS_CHIP, RADIUS_PANEL, Theme
 
@@ -91,9 +91,8 @@ class DetailsPane(QWidget):
         self._layout.addWidget(self._title(entry.number or fmt.EM_DASH))
         self._layout.addWidget(self._pill(entry.direction))
 
-        delay = upload_delay_days(entry.issue_date, entry.created_at)
-        if delay is not None and delay > DELAY_THRESHOLD_DAYS:
-            self._layout.addWidget(self._delayed_panel(entry, delay))
+        if is_delayed(entry.issue_date, entry.created_at):
+            self._layout.addWidget(self._delayed_panel(entry))
 
         self._add_facts(
             ("Partener", entry.partner_name or fmt.EM_DASH),
@@ -122,7 +121,9 @@ class DetailsPane(QWidget):
 
     # -- panels ---------------------------------------------------------------
 
-    def _delayed_panel(self, entry: CatalogEntry, delay: int) -> QWidget:
+    def _delayed_panel(self, entry: CatalogEntry) -> QWidget:
+        delay = upload_delay_days(entry.issue_date, entry.created_at)
+        assert delay is not None  # the is_delayed gate implies both dates exist
         after = fmt.noun(delay, "zi", "zile")
         limit = fmt.noun(DELAY_THRESHOLD_DAYS, "zi", "zile")
         body = (
@@ -328,7 +329,7 @@ class DetailsPane(QWidget):
         return button
 
     def _reset(self) -> None:
-        _clear_layout(self._layout)
+        clear_layout(self._layout)
 
 
 def _spv_date(entry: CatalogEntry) -> dt.date | None:
@@ -342,13 +343,3 @@ def _reveal_target(entry: CatalogEntry) -> Path:
         if candidate.exists():
             return candidate
     return Path(entry.base_path).parent
-
-
-def _clear_layout(layout: QLayout) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        if item is None:
-            continue
-        widget = item.widget()
-        if widget is not None:
-            widget.deleteLater()

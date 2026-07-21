@@ -110,6 +110,14 @@ anaf-sync init            # scrie un config.toml comentat
 anaf-sync status          # arată unde se află fișierul pe platforma ta
 ```
 
+Fișierul generat e comentat și acoperă toate cheile: `cif = "12345678"` (sau
+`cifs = ["...", "..."]` pentru mai multe firme), `direction` (`received`,
+`sent` sau `both`), `lookback_days` (1–60 — limita de retenție ANAF) și
+`failure_retention_days`, plus secțiunea `[output]` de mai jos. Dacă vrei
+config-ul în altă parte, `--config`/`-c` (sau variabila de mediu
+`ANAF_SYNC_CONFIG`) funcționează la orice comandă; `anaf-sync init --force`
+suprascrie un fișier existent.
+
 Partea interesantă e șablonul de căi:
 
 ```toml
@@ -130,9 +138,10 @@ foldere; fiecare artefact își adaugă propria extensie.
 
 Primele variabile din listă se completează din XML-ul facturii, deci pentru
 mesajele fără XML (fișiere de eroare, mesaje de la cumpărător) devin `unknown`.
-Doar `cif`, `direction`, `message_id`, `request_id`, `message_type`, `created`
-și `created_month` există întotdeauna — un șablon construit exclusiv din
-celelalte adună toate aceste mesaje pe aceeași cale.
+Doar `cif`, `direction`, `message_id`, `request_id` și `message_type` există
+întotdeauna; `created` și `created_month` vin din listarea ANAF și pot deveni
+`unknown` doar în cazuri rare. Un șablon construit exclusiv din variabilele
+derivate din XML adună toate mesajele fără XML pe aceeași cale.
 
 Orice variabilă acceptă o conversie de capitalizare: `{issue_month!u}` →
 `IULIE`, `{issue_month!c}` → `Iulie`, `{issue_month!l}` → `iulie` (implicit
@@ -144,13 +153,17 @@ foldere sortate cronologic, combinați numărul și numele lunii:
 ## Rulare
 
 ```bash
-anaf-sync sync --dry-run   # arată ce s-ar descărca, fără să scrie nimic
-anaf-sync sync             # descarcă tot ce e nou
+anaf-sync sync --dry-run     # arată ce s-ar descărca, fără să scrie nimic
+anaf-sync sync               # descarcă tot ce e nou
+anaf-sync sync --days 7      # restrânge fereastra doar pentru această rulare (1–60)
+anaf-sync sync --redownload  # re-descarcă tot — util după schimbarea șablonului
 ```
 
 Rulările sunt idempotente: un fișier de stare reține id-urile mesajelor deja
 arhivate, așa că ferestrele de 60 de zile care se suprapun nu duplică
 niciodată nimic, iar ce urmează ANAF să șteargă a fost deja capturat.
+`--redownload` sare peste această evidență și aduce din nou tot ce e încă în
+SPV, rescriind fișierele pe căile date de șablonul curent.
 
 ## Programare
 

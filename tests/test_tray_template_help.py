@@ -14,14 +14,13 @@ from anaf_sync.config import write_default_config  # noqa: E402
 from anaf_sync.tray import settings_view as sv  # noqa: E402
 from anaf_sync.tray import store  # noqa: E402
 from anaf_sync.tray.flowgrid import WIDE_BREAKPOINT, group_column_count  # noqa: E402
-from anaf_sync.tray.preview import sample_context  # noqa: E402
+from anaf_sync.tray.preview import render_sample, sample_context  # noqa: E402
 from anaf_sync.tray.settings_view import _FORM_CHROME, SettingsView  # noqa: E402
 from anaf_sync.tray.template_help import (  # noqa: E402
     _SETTINGS_KEY,
     GROUPS,
     SPECIFIERS,
     TemplateHelp,
-    render_sample,
     rendered_samples,
     variable_count,
 )
@@ -87,12 +86,14 @@ def _names() -> set[str]:
 def test_panel_documents_exactly_the_template_context() -> None:
     """The anti-drift gate.
 
-    A variable added to `context.build_context` (and so to `sample_context`)
+    A variable added to `context.project_message` (and so to `sample_context`)
     without a row here fails *this* test rather than silently producing another
     stale list — which is how the handoff's own list went stale in the first
     place.
     """
     assert _names() == set(sample_context())
+    # No duplicate names across groups: the header badge counts rows.
+    assert variable_count() == len(_names())
 
 
 def test_every_variable_has_a_rendered_sample() -> None:
@@ -110,19 +111,21 @@ def test_samples_come_from_the_real_renderer() -> None:
     assert samples["partner_name"] == "ACME CONSTRUCT S.R.L"
 
 
-@pytest.mark.parametrize(
-    ("expression", "expected"),
-    [
-        ("{issue_date:%Y}", "2026"),
-        ("{issue_date:%m}", "07"),
-        ("{issue_date:%Y-%m-%d}", "2026-07-03"),
-        ("{created:%H%M}", "0930"),
-        ("{issue_month!u}", "IULIE"),
-        ("{issue_month!c}", "Iulie"),
-        ("{issue_month!l}", "iulie"),
-        ("{partner_name!t}", "Acme Construct S.R.L"),
-    ],
-)
+#: Expected output per documented specifier example — the single copy the
+#: parametrized renders and the coverage check below both derive from.
+_SPECIFIER_EXAMPLES = {
+    "{issue_date:%Y}": "2026",
+    "{issue_date:%m}": "07",
+    "{issue_date:%Y-%m-%d}": "2026-07-03",
+    "{created:%H%M}": "0930",
+    "{issue_month!u}": "IULIE",
+    "{issue_month!c}": "Iulie",
+    "{issue_month!l}": "iulie",
+    "{partner_name!t}": "Acme Construct S.R.L",
+}
+
+
+@pytest.mark.parametrize(("expression", "expected"), _SPECIFIER_EXAMPLES.items())
 def test_specifier_examples_render_as_advertised(
     expression: str, expected: str
 ) -> None:
@@ -131,16 +134,7 @@ def test_specifier_examples_render_as_advertised(
 
 def test_every_documented_specifier_is_covered_above() -> None:
     documented = {e for _title, expressions in SPECIFIERS for e in expressions}
-    assert documented == {
-        "{issue_date:%Y}",
-        "{issue_date:%m}",
-        "{issue_date:%Y-%m-%d}",
-        "{created:%H%M}",
-        "{issue_month!u}",
-        "{issue_month!c}",
-        "{issue_month!l}",
-        "{partner_name!t}",
-    }
+    assert documented == set(_SPECIFIER_EXAMPLES)
 
 
 def test_group_columns_share_the_artifact_breakpoint() -> None:
@@ -331,7 +325,3 @@ def test_insertion_replaces_the_selection(
     view._insert_into_template("{partner_name}")
 
     assert view._template.text() == "{cif}/{partner_name}"
-
-
-def test_the_count_in_the_header_matches_the_data() -> None:
-    assert variable_count() == len(_names())

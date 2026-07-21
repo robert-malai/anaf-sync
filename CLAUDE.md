@@ -5,7 +5,9 @@ Guidance for Claude Code when working in this repository.
 ## What this is
 
 `anaf-sync` is a cross-platform (Windows/Linux/macOS) CLI that archives RO
-e-Factura invoices locally on a schedule. It is a thin, deliberate layer over
+e-Factura invoices locally on a schedule, plus an optional desktop tray
+companion (`anaf-sync[tray]`, PySide6) that observes the archive. It is a
+thin, deliberate layer over
 [anafpy](https://github.com/robert-malai/anafpy) — Robert's own package, which
 also powers his local anafpy MCP server. Design rationale lives in
 [DESIGN.md](DESIGN.md); read it before changing architecture-level behaviour.
@@ -13,8 +15,10 @@ also powers his local anafpy MCP server. Design rationale lives in
 ## Commands
 
 ```bash
-uv sync                                  # install deps (incl. dev group)
-uv run pytest -q                         # tests
+uv sync --extra tray --group qt          # install deps — what CI runs; plain
+                                         #   `uv sync` silently skips all tray
+                                         #   tests and un-types the Qt code
+QT_QPA_PLATFORM=offscreen uv run pytest -q   # tests (offscreen for the Qt suite)
 uv run ruff check src tests             # lint
 uv run black --check src tests          # format check (black writes; ruff checks)
 uv run mypy src                          # strict typing — must stay clean
@@ -34,8 +38,12 @@ is considered done.
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |
 | `logsink.py` | console/system log-mode detection + native sinks: Event Log, os_log, journald |
-| `state.py` | SQLite `Archive`: dedupe gate + permanent catalog of archived messages (idempotence) + pruned failure traces (visibility only, never a retry gate) |
-| `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd |
+| `state.py` | SQLite `Archive`: dedupe gate + permanent catalog of archived messages (idempotence) + pruned failure traces (visibility only, never a retry gate) + the `meta.last_run` `RunRecord` the tray/health read |
+| `lock.py` | `filelock`-based `sync_lock` — one sync at a time; the DB cannot serialize runs |
+| `health.py` | pure ok/warn/err derivation, purge countdown, delay rule — shared by `status` and the tray |
+| `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd; also home of the shared script-resolution/subprocess helpers |
+| `autostart.py` | login-time autostart for the tray (`anaf-sync tray install\|remove\|status`) |
+| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`icons`/`format` (pure) and `watcher`/`runner`/`store` (Qt edges) |
 
 ## Invariants — do not break
 
@@ -58,7 +66,11 @@ is considered done.
   for humans and sets exit codes.
 - **Cross-platform.** Anything touching paths, schedulers, or consoles must
   work on Windows, Linux, and macOS. No POSIX-only assumptions outside the
-  platform-dispatched branches of `scheduling.py`.
+  platform-dispatched branches of `scheduling.py`/`autostart.py`.
+- **The tray is a read-only observer.** It reads the archive via
+  `Archive.open_readonly`, edits only `config.toml` (tomlkit round-trip), and
+  delegates every sync to the `anaf-sync sync` CLI. Never give it a second
+  code path that mutates the archive.
 
 ## Sharp edges
 

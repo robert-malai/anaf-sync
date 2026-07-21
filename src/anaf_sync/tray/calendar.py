@@ -18,7 +18,12 @@ from PySide6.QtWidgets import QCalendarWidget, QWidget
 
 from .theme import LIGHT, Theme
 
-__all__ = ["RangeCalendar"]
+__all__ = ["RangeCalendar", "to_date"]
+
+
+def to_date(qdate: QDate) -> dt.date:
+    """The plain :class:`datetime.date` behind a :class:`QDate`."""
+    return dt.date(qdate.year(), qdate.month(), qdate.day())
 
 
 class RangeCalendar(QCalendarWidget):
@@ -47,7 +52,7 @@ class RangeCalendar(QCalendarWidget):
         self.updateCells()
 
     def _on_clicked(self, qdate: QDate) -> None:
-        self._pick(_to_date(qdate))
+        self._pick(to_date(qdate))
 
     def _pick(self, day: dt.date) -> None:
         """Advance the range state machine by one click (pure; testable)."""
@@ -63,7 +68,7 @@ class RangeCalendar(QCalendarWidget):
         self.updateCells()
 
     def paintCell(self, painter: QPainter, rect: QRect, qdate: QDate) -> None:
-        day = _to_date(qdate)
+        day = to_date(qdate)
         theme = self._theme
         if self._start is not None and (day == self._start or day == self._end):
             painter.fillRect(rect, QColor(theme.accent))
@@ -77,7 +82,3 @@ class RangeCalendar(QCalendarWidget):
         ):
             painter.fillRect(rect, QColor(theme.accent_soft_bg))
         super().paintCell(painter, rect, qdate)
-
-
-def _to_date(qdate: QDate) -> dt.date:
-    return dt.date(qdate.year(), qdate.month(), qdate.day())

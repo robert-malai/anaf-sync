@@ -39,7 +39,7 @@ __all__ = ["Archive", "CatalogEntry", "FailureRecord", "RunRecord"]
 
 _SCHEMA_VERSION = "2"
 
-_SCHEMA = """
+_SCHEMA = f"""
 CREATE TABLE messages (
     message_id   TEXT PRIMARY KEY,
     cif          TEXT NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE failures (
 );
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+INSERT INTO meta (key, value) VALUES ('schema_version', '{_SCHEMA_VERSION}');
 """
 
 

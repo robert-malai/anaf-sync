@@ -37,9 +37,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..template import PathTemplate
+from . import store
 from .flowgrid import SPACING, ColumnGrid, GroupGrid
-from .preview import sample_context
+from .preview import render_sample
 from .theme import MONO_FONT_FAMILY, Theme
 
 __all__ = ["GROUPS", "TemplateHelp", "rendered_samples", "template_help_qss"]
@@ -65,7 +65,7 @@ class Group:
 
 
 #: The template vocabulary, exactly. ``total`` and ``seller_*``/``buyer_*`` are
-#: absent because they left the context — see ``context.build_context``.
+#: absent because they left the context — see ``context.project_message``.
 GROUPS: tuple[Group, ...] = (
     Group(
         "Factura",
@@ -149,20 +149,6 @@ _STRIP_KEY_WIDTH = 60
 #: eye stops reading it as a row of examples.
 _MAX_SPECIFIER_COLUMNS = 4
 _SETTINGS_KEY = "settings/variableHelpExpanded"
-
-
-def render_sample(expression: str) -> str:
-    """Render one ``{name}``/``{name:spec}`` against the sample invoice.
-
-    The whole point of the panel: production rendering, so the legend and a real
-    sync can never disagree. Returns the rendered text, or ``expression``
-    unchanged if it cannot render (an impossible state the suite pins down, but
-    a legend must never raise into the form).
-    """
-    try:
-        return str(PathTemplate(expression).render(sample_context()))
-    except Exception:  # a reference panel is never worth crashing Setări for
-        return expression
 
 
 def rendered_samples() -> dict[str, str]:
@@ -467,15 +453,12 @@ class TemplateHelp(QWidget):
 
 def _restore_expanded() -> bool:
     """The remembered disclosure state — collapsed until the user opens it."""
-    from .store import geometry_settings
-
-    return str(geometry_settings().value(_SETTINGS_KEY, "false")).lower() == "true"
+    value = store.geometry_settings().value(_SETTINGS_KEY, "false")
+    return str(value).lower() == "true"
 
 
 def _store_expanded(expanded: bool) -> None:
-    from .store import geometry_settings
-
-    geometry_settings().setValue(_SETTINGS_KEY, "true" if expanded else "false")
+    store.geometry_settings().setValue(_SETTINGS_KEY, "true" if expanded else "false")
 
 
 def template_help_qss(theme: Theme) -> str:

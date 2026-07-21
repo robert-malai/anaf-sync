@@ -32,7 +32,7 @@ NEVER_SYNCED = "Nu s-a sincronizat încă"
 AUTH_EXPIRED_PREFIX = "Autentificarea ANAF a expirat — rulați "
 AUTH_LOGIN_COMMAND = "anafpy auth login"
 
-#: Red row when the last run broke for a non-auth reason (crash / stale).
+#: Red row when the last run broke for a non-auth reason (a crash).
 _GENERIC_ERROR = "Ultima sincronizare a eșuat — verificați jurnalul aplicației"
 
 #: Shown in the red alert row when ``config.toml`` cannot be parsed.
@@ -63,13 +63,12 @@ def load_status(
     state_path: Path,
     config_path: Path,
     now: dt.datetime,
-    interval: dt.timedelta | None = None,
 ) -> TrayStatus:
     """Assemble the tray display model from the archive and config on disk."""
     output_dir, config_error = _read_config(config_path)
     count, failures, last_run = _read_archive(state_path)
 
-    health = derive_health(last_run, failures, now, interval=interval)
+    health = derive_health(last_run, failures, now)
     state: HealthState = "err" if config_error else health.state
 
     alert_text, alert_command, alert_state = _alert(state, health, config_error)
@@ -129,13 +128,10 @@ def _subline(state: HealthState, last_run: RunRecord | None, now: dt.datetime) -
     return base
 
 
-def _failing_alert(count: int, partner: str | None, days_left: int) -> str:
-    """Amber row: ``"1 factură eșuează repetat — TERMOENERGIA S.R.L. — …"``."""
-    parts = [f"{fmt.noun(count, 'factură', 'facturi')} eșuează repetat"]
-    if partner:
-        parts.append(partner)
-    parts.append(fmt.spv_expiry(days_left))
-    return " — ".join(parts)
+def _failing_alert(count: int, days_left: int) -> str:
+    """Amber row: ``"1 factură eșuează repetat — expiră din SPV în …"``."""
+    failing = f"{fmt.noun(count, 'factură', 'facturi')} eșuează repetat"
+    return f"{failing} — {fmt.spv_expiry(days_left)}"
 
 
 def _alert(
@@ -150,12 +146,6 @@ def _alert(
             return AUTH_EXPIRED_PREFIX, AUTH_LOGIN_COMMAND, "err"
         return _GENERIC_ERROR, None, "err"
     if state == "warn":
-        worst = health.worst_failure
-        partner = worst.partner_name if worst else None
-        days_left = worst.days_left if worst else 0
-        return (
-            _failing_alert(health.failure_count, partner, days_left),
-            None,
-            "warn",
-        )
+        days_left = health.worst_days_left if health.worst_days_left is not None else 0
+        return _failing_alert(health.failure_count, days_left), None, "warn"
     return None, None, "ok"

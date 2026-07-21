@@ -16,7 +16,7 @@ from typing import Any
 from anafpy.efactura import MessageListItem
 from anafpy.efactura.authoring import InvoiceDocument
 
-__all__ = ["DirectionLabel", "build_context", "catalog_fields", "direction_of"]
+__all__ = ["DirectionLabel", "Projection", "direction_of", "project_message"]
 
 #: "received" | "sent" — narrow alias for readability. Deliberately not the
 #: config.Direction enum: that one is the *filter* the user configures (and
@@ -97,10 +97,6 @@ class _Invoice:
     currency: str | None
     total: Decimal | None
     kind: str | None
-    seller_name: str | None
-    seller_cif: str | None
-    buyer_name: str | None
-    buyer_cif: str | None
     partner_name: str | None
     partner_cif: str | None
 
@@ -152,32 +148,42 @@ def _project(item: MessageListItem, view: InvoiceDocument | None) -> _Invoice:
         currency=currency,
         total=total,
         kind=kind,
-        seller_name=seller_name,
-        seller_cif=seller_cif,
-        buyer_name=buyer_name,
-        buyer_cif=buyer_cif,
         partner_name=partner_name,
         partner_cif=partner_cif,
     )
 
 
-def build_context(
+@dataclasses.dataclass(frozen=True)
+class Projection:
+    """The two derived views of one message, from a single parse."""
+
+    #: The full variable set available to the path template.
+    context: dict[str, Any]
+    #: The catalog-tier columns, keyed as ``state.CatalogEntry`` names them.
+    catalog: dict[str, Any]
+
+
+def project_message(
     item: MessageListItem,
     view: InvoiceDocument | None,
     *,
     cif: str,
-) -> dict[str, Any]:
-    """The full variable set available to the path template.
+) -> Projection:
+    """Project one message into its template context and catalog columns.
 
-    Deliberately narrower than :class:`_Invoice`. ``total`` is not here because a
-    path *names* a document and an amount is a fact about it — one ANAF restates
-    and the archive path would move. ``seller_*``/``buyer_*`` are not here
-    because they are the same two parties as ``partner_*`` and ``cif`` addressed
-    by role instead of by relationship: under ``direction = "both"`` a
-    ``{seller_name}`` template files the user's own company as the folder for
-    every invoice they sent, while ``partner_name`` is correct in both
-    directions by construction. Both still exist on :class:`_Invoice` — they
-    feed ``partner_*`` and :func:`catalog_fields`.
+    One parse feeds both, so the archive path and the catalog can never drift
+    on how a field is derived. Everything is best-effort/``None`` throughout —
+    the template renders missing values as ``unknown``.
+
+    The context is deliberately narrower than the projection. ``total`` is not
+    in it because a path *names* a document and an amount is a fact about it —
+    one ANAF restates and the archive path would move; the catalog keeps it
+    (narrowed from ``Decimal`` to ``float`` for the ``REAL`` column).
+    ``seller_*``/``buyer_*`` appear nowhere: they are the same two parties as
+    ``partner_*`` and ``cif`` addressed by role instead of by relationship —
+    under ``direction = "both"`` a ``{seller_name}`` template files the user's
+    own company as the folder for every invoice they sent, while
+    ``partner_name`` is correct in both directions by construction.
 
     Args:
         item: the message-list entry the download originated from.
@@ -186,7 +192,7 @@ def build_context(
     """
     inv = _project(item, view)
     created = _parse_created(item.created_at)
-    return {
+    context = {
         "message_id": item.id,
         "request_id": item.request_id,
         "message_type": item.message_type,
@@ -203,21 +209,7 @@ def build_context(
         "partner_name": inv.partner_name,
         "partner_cif": inv.partner_cif,
     }
-
-
-def catalog_fields(
-    item: MessageListItem, view: InvoiceDocument | None
-) -> dict[str, Any]:
-    """The catalog-tier columns for one message (see ``state.CatalogEntry``).
-
-    Best-effort/``None`` throughout, projected from the same sources as
-    :func:`build_context`. ``total`` is narrowed from ``Decimal`` to ``float``
-    for the catalog's ``REAL`` column. ``created`` is ANAF's ``data_creare``
-    (when the message entered SPV), keyed as the engine maps it onto
-    ``CatalogEntry.created_at``.
-    """
-    inv = _project(item, view)
-    return {
+    catalog = {
         "issue_date": inv.issue_date,
         "number": inv.number,
         "partner_name": inv.partner_name,
@@ -225,5 +217,6 @@ def catalog_fields(
         "total": float(inv.total) if inv.total is not None else None,
         "currency": inv.currency,
         "message_type": item.message_type,
-        "created": _parse_created(item.created_at),
+        "created_at": created,
     }
+    return Projection(context=context, catalog=catalog)

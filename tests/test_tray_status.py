@@ -137,16 +137,13 @@ def test_new_invoices_phrase_agrees_in_number() -> None:
 
 
 def test_failing_alert_matches_handoff() -> None:
-    alert = tray_status._failing_alert(1, "TERMOENERGIA S.R.L.", 9)
-    assert (
-        alert
-        == "1 factură eșuează repetat — TERMOENERGIA S.R.L. — expiră din SPV în 9 zile"
-    )
+    alert = tray_status._failing_alert(1, 9)
+    assert alert == "1 factură eșuează repetat — expiră din SPV în 9 zile"
 
 
-def test_failing_alert_without_partner_or_expired() -> None:
+def test_failing_alert_when_already_expired() -> None:
     assert (
-        tray_status._failing_alert(2, None, 0)
+        tray_status._failing_alert(2, 0)
         == "2 facturi eșuează repetat — a expirat din SPV"
     )
 

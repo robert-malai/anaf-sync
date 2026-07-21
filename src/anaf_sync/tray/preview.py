@@ -14,7 +14,7 @@ import re
 
 from ..template import PathTemplate, TemplateError
 
-__all__ = ["PreviewResult", "render_preview", "sample_context"]
+__all__ = ["PreviewResult", "render_preview", "render_sample", "sample_context"]
 
 _UNKNOWN_VAR = re.compile(r"unknown template variable \{([^}]+)\}")
 
@@ -31,7 +31,8 @@ def sample_context() -> dict[str, object]:
     """The handoff's sample invoice, covering every path-template variable.
 
     Values match §3: FCT-1001 / ACME CONSTRUCT S.R.L. / issued 2026-07-03 /
-    cif 12345678 / received. Keys mirror :func:`anaf_sync.context.build_context`
+    cif 12345678 / received. Keys mirror the template context built by
+    :func:`anaf_sync.context.project_message`
     exactly — :mod:`template_help` renders its reference table from this dict,
     so a variable missing here is a variable the UI silently stops documenting.
     """
@@ -54,6 +55,20 @@ def sample_context() -> dict[str, object]:
         "partner_name": "ACME CONSTRUCT S.R.L.",
         "partner_cif": "12345670",
     }
+
+
+def render_sample(expression: str) -> str:
+    """Render one ``{name}``/``{name:spec}`` against the sample invoice.
+
+    Production rendering, so the variable reference and a real sync can never
+    disagree. Returns the rendered text, or ``expression`` unchanged if it
+    cannot render (an impossible state the suite pins down, but a legend must
+    never raise into the form).
+    """
+    try:
+        return str(PathTemplate(expression).render(sample_context()))
+    except Exception:  # a reference panel is never worth crashing Setări for
+        return expression
 
 
 def render_preview(template: str, *, directory: str = "~/Facturi") -> PreviewResult:

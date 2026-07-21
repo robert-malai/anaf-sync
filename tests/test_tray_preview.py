@@ -3,7 +3,7 @@
 from anafpy.efactura import MessageListItem
 
 from anaf_sync.config import _DEFAULT_TEMPLATE
-from anaf_sync.context import build_context
+from anaf_sync.context import project_message
 from anaf_sync.tray.preview import render_preview, sample_context
 
 
@@ -34,11 +34,11 @@ def test_sample_context_mirrors_the_real_template_context() -> None:
     """The sample is the legend's data source, so it must not drift.
 
     `template_help` renders its reference table from `sample_context`, and the
-    engine renders real paths from `build_context` — a key in one and not the
+    engine renders real paths from `project_message` — a key in one and not the
     other means the panel documents a variable that does not exist, or hides
     one that does.
     """
-    real = build_context(
+    real = project_message(
         MessageListItem.model_construct(
             id="3001",
             request_id="5001",
@@ -47,7 +47,7 @@ def test_sample_context_mirrors_the_real_template_context() -> None:
         ),
         None,
         cif="12345678",
-    )
+    ).context
     assert set(sample_context()) == set(real)
 
 

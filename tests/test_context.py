@@ -6,7 +6,7 @@ from anafpy.efactura import MessageListItem
 from anafpy.efactura.authoring import InvoiceDocument
 from anafpy.efactura.authoring.models import Party, Seller
 
-from anaf_sync.context import build_context, catalog_fields, direction_of
+from anaf_sync.context import direction_of, project_message
 
 
 def _item(**overrides: str) -> MessageListItem:
@@ -31,7 +31,7 @@ def test_direction_classification() -> None:
 
 
 def test_context_without_a_parsed_view_falls_back_to_the_listing() -> None:
-    context = build_context(_item(), None, cif="RO111")
+    context = project_message(_item(), None, cif="RO111").context
     assert context["message_id"] == "3001"
     assert context["direction"] == "received"
     assert context["cif"] == "111"
@@ -52,7 +52,7 @@ def test_context_with_a_parsed_view() -> None:
         seller=Seller.model_construct(name="Furnizor SRL", vat_id="RO222"),
         buyer=Party.model_construct(name="Client SRL", vat_id="RO111"),
     )
-    context = build_context(_item(), view, cif="111")
+    context = project_message(_item(), view, cif="111").context
     assert context["number"] == "FCT-100"
     assert context["issue_date"] == dt.date(2026, 7, 1)
     assert context["issue_month"] == "iulie"
@@ -64,14 +64,14 @@ def test_context_with_a_parsed_view() -> None:
 def test_path_context_omits_catalog_only_fields() -> None:
     """`total` and the role-addressed parties are catalog data, not path data.
 
-    They still exist on the projection — `catalog_fields` exports `total`, and
-    seller/buyer are what `partner_*` is derived from — but a path template can
-    no longer reference them (see `build_context`).
+    The catalog keeps `total`; seller/buyer are what `partner_*` is derived
+    from — but a path template can no longer reference any of them (see
+    `project_message`).
     """
-    context = build_context(_item(), None, cif="111")
+    projection = project_message(_item(), None, cif="111")
     for name in ("total", "seller_name", "seller_cif", "buyer_name", "buyer_cif"):
-        assert name not in context, name
-    assert "total" in catalog_fields(_item(), None)
+        assert name not in projection.context, name
+    assert "total" in projection.catalog
 
 
 def test_unusable_totals_do_not_break_the_projection() -> None:
@@ -84,7 +84,7 @@ def test_unusable_totals_do_not_break_the_projection() -> None:
         seller=Seller.model_construct(name="Furnizor SRL", vat_id="RO222"),
         buyer=Party.model_construct(name="Client SRL", vat_id="RO111"),
     )
-    assert catalog_fields(_item(), view)["total"] is None
+    assert project_message(_item(), view, cif="111").catalog["total"] is None
 
 
 def test_sent_invoice_partner_is_the_buyer() -> None:
@@ -93,6 +93,6 @@ def test_sent_invoice_partner_is_the_buyer() -> None:
         details="Factura cu id_incarcare=5001 emisa de cif_emitent=111 "
         "pentru cif_beneficiar=333",
     )
-    context = build_context(item, None, cif="111")
+    context = project_message(item, None, cif="111").context
     assert context["direction"] == "sent"
     assert context["partner_cif"] == "333"

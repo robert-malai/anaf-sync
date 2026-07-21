@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import plistlib
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from .scheduling import resolve_script, run_checked
 
 __all__ = [
     "AutostartError",
@@ -44,18 +45,13 @@ def tray_command() -> list[str]:
     """
     if getattr(sys, "frozen", False):
         return [sys.executable]
-    found = shutil.which("anaf-sync-tray")
-    if found:
-        return [str(Path(found).resolve())]
-    candidate = Path(sys.executable).with_name(
-        "anaf-sync-tray.exe" if sys.platform == "win32" else "anaf-sync-tray"
-    )
-    if candidate.exists():
-        return [str(candidate.resolve())]
-    raise AutostartError(
-        "cannot locate the `anaf-sync-tray` executable — install the tray extra "
-        '(`pip install "anaf-sync[tray]"`) so the script is on PATH'
-    )
+    script = resolve_script("anaf-sync-tray")
+    if script is None:
+        raise AutostartError(
+            "cannot locate the `anaf-sync-tray` executable — install the tray "
+            'extra (`pip install "anaf-sync[tray]"`) so the script is on PATH'
+        )
+    return [str(script)]
 
 
 # -- pure payload builders (unit-tested) -----------------------------------------
@@ -169,7 +165,7 @@ def _remove_linux() -> str:
 def _install_windows(command: list[str]) -> str:
     # `reg`, like scheduling.py's `schtasks`, keeps the OS call behind one seam
     # and sidesteps `winreg`'s Windows-only typing on the dev machine.
-    _run_reg(
+    run_checked(
         [
             "reg",
             "add",
@@ -181,7 +177,8 @@ def _install_windows(command: list[str]) -> str:
             "/d",
             windows_run_command(command),
             "/f",
-        ]
+        ],
+        error=AutostartError,
     )
     return f"tray autostart enabled — HKCU Run value {_RUN_VALUE_NAME!r}"
 
@@ -202,10 +199,3 @@ def _windows_value() -> str | None:
         text=True,
     )
     return result.stdout if result.returncode == 0 else None
-
-
-def _run_reg(cmd: list[str]) -> None:
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip()
-        raise AutostartError(f"reg failed: {detail}")

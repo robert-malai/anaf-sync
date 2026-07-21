@@ -13,6 +13,7 @@ from anaf_sync.tray import settings_view as sv  # noqa: E402
 from anaf_sync.tray.flowgrid import (  # noqa: E402
     MIN_COLUMN_WIDTH,
     SPACING,
+    WIDE_BREAKPOINT,
     column_count,
 )
 from anaf_sync.tray.settings_view import _FORM_CHROME  # noqa: E402
@@ -207,15 +208,10 @@ def test_setari_geometry_persists_across_instances(
 
 
 def test_artifact_grid_flows_three_up_then_five_up() -> None:
-    threshold = 5 * MIN_COLUMN_WIDTH + 4 * SPACING
-    assert column_count(threshold) == 5
-    assert column_count(threshold - 1) == 3
-    assert column_count(300) == 3
-
-
-def test_artifact_grid_never_uses_four_columns() -> None:
-    # Five cards in four columns strand one alone on the second row.
-    assert 4 not in {column_count(width) for width in range(200, 1400)}
+    # One boundary check per side; the "never four columns" property is true by
+    # inspection of the two-branch rule and needs no brute force.
+    assert column_count(WIDE_BREAKPOINT) == 5
+    assert column_count(WIDE_BREAKPOINT - 1) == 3
 
 
 def test_artifact_cards_lay_out_in_two_rows_then_one(

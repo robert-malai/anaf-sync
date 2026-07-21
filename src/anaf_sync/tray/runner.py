@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
-from ..scheduling import _executable
+from ..scheduling import sync_executable
 
 __all__ = ["SyncRunner"]
 
@@ -35,7 +35,7 @@ class SyncRunner(QObject):
         if self.running:
             return
         process = QProcess(self)
-        process.setProgram(str(_executable()))
+        process.setProgram(str(sync_executable()))
         process.setArguments(["sync"])
         process.finished.connect(self._on_finished)
         process.errorOccurred.connect(self._on_error)

@@ -15,10 +15,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-__all__ = ["ScheduleError", "install", "status", "uninstall"]
+__all__ = [
+    "ScheduleError",
+    "install",
+    "resolve_script",
+    "run_checked",
+    "status",
+    "sync_executable",
+    "uninstall",
+]
 
 _TASK_NAME = "AnafSync"  # Windows task / systemd unit / launchd label stem
 _LAUNCHD_LABEL = "ro.anaf-sync.sync"
+_UNIT_NAME = "anaf-sync"  # systemd user unit stem
 
 _INTERVAL_RE = re.compile(r"^(\d+)\s*([mhd])$", re.IGNORECASE)
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
@@ -57,29 +66,48 @@ def parse_daily_at(value: str) -> tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
-def _executable() -> Path:
-    """The anaf-sync console script, resolved for use outside this shell."""
-    found = shutil.which("anaf-sync")
+def resolve_script(name: str) -> Path | None:
+    """Resolve a console script for use outside this shell, or ``None``.
+
+    Checks PATH first, then the script sitting next to the current interpreter
+    (the venv) — shared with :mod:`anaf_sync.autostart`, which resolves
+    ``anaf-sync-tray`` the same way.
+    """
+    found = shutil.which(name)
     if found:
         return Path(found).resolve()
-    # Fallback: the script sitting next to the current interpreter (venv).
     candidate = Path(sys.executable).with_name(
-        "anaf-sync.exe" if sys.platform == "win32" else "anaf-sync"
+        f"{name}.exe" if sys.platform == "win32" else name
     )
     if candidate.exists():
         return candidate.resolve()
-    raise ScheduleError(
-        "cannot locate the `anaf-sync` executable — install the package "
-        "(e.g. `uv tool install anaf-sync`) so the script is on PATH"
-    )
+    return None
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+def sync_executable() -> Path:
+    """The anaf-sync console script; the schedulers and the tray both run it."""
+    script = resolve_script("anaf-sync")
+    if script is None:
+        raise ScheduleError(
+            "cannot locate the `anaf-sync` executable — install the package "
+            "(e.g. `uv tool install anaf-sync`) so the script is on PATH"
+        )
+    return script
+
+
+def run_checked(
+    cmd: list[str], *, error: type[RuntimeError]
+) -> subprocess.CompletedProcess[str]:
+    """Run an OS tool; raise ``error`` carrying the tool's own message."""
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip()
-        raise ScheduleError(f"{' '.join(cmd[:2])} failed: {detail}")
+        raise error(f"{' '.join(cmd[:2])} failed: {detail}")
     return result
+
+
+def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return run_checked(cmd, error=ScheduleError)
 
 
 def install(*, every: str | None, daily_at: str | None) -> str:
@@ -89,7 +117,7 @@ def install(*, every: str | None, daily_at: str | None) -> str:
     """
     if (every is None) == (daily_at is None):
         raise ScheduleError("pass exactly one of --every or --daily-at")
-    exe = _executable()
+    exe = sync_executable()
     if sys.platform == "win32":
         return _install_windows(exe, every, daily_at)
     if sys.platform == "darwin":
@@ -108,11 +136,11 @@ def uninstall() -> str:
         )
         plist.unlink(missing_ok=True)
         return f"removed launchd agent {_LAUNCHD_LABEL!r}"
-    _run(["systemctl", "--user", "disable", "--now", f"{_unit_name()}.timer"])
+    _run(["systemctl", "--user", "disable", "--now", f"{_UNIT_NAME}.timer"])
     for suffix in (".timer", ".service"):
-        (_systemd_unit_dir() / f"{_unit_name()}{suffix}").unlink(missing_ok=True)
+        (_systemd_unit_dir() / f"{_UNIT_NAME}{suffix}").unlink(missing_ok=True)
     _run(["systemctl", "--user", "daemon-reload"])
-    return f"removed systemd user timer {_unit_name()!r}"
+    return f"removed systemd user timer {_UNIT_NAME!r}"
 
 
 def status() -> str:
@@ -134,12 +162,12 @@ def status() -> str:
         loaded = "loaded" if result.returncode == 0 else "installed but not loaded"
         return f"launchd agent {_LAUNCHD_LABEL}: {loaded}"
     result = subprocess.run(
-        ["systemctl", "--user", "list-timers", f"{_unit_name()}.timer", "--all"],
+        ["systemctl", "--user", "list-timers", f"{_UNIT_NAME}.timer", "--all"],
         capture_output=True,
         text=True,
     )
     out = result.stdout.strip()
-    return out if _unit_name() in out else "not installed"
+    return out if _UNIT_NAME in out else "not installed"
 
 
 # -- Windows ---------------------------------------------------------------------
@@ -185,10 +213,6 @@ def _install_windows(exe: Path, every: str | None, daily_at: str | None) -> str:
 # -- Linux (systemd user units) ---------------------------------------------------
 
 
-def _unit_name() -> str:
-    return "anaf-sync"
-
-
 def _systemd_unit_dir() -> Path:
     return Path.home() / ".config" / "systemd" / "user"
 
@@ -226,12 +250,12 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 """
-    (unit_dir / f"{_unit_name()}.service").write_text(service, encoding="utf-8")
-    (unit_dir / f"{_unit_name()}.timer").write_text(timer, encoding="utf-8")
+    (unit_dir / f"{_UNIT_NAME}.service").write_text(service, encoding="utf-8")
+    (unit_dir / f"{_UNIT_NAME}.timer").write_text(timer, encoding="utf-8")
     _run(["systemctl", "--user", "daemon-reload"])
-    _run(["systemctl", "--user", "enable", "--now", f"{_unit_name()}.timer"])
+    _run(["systemctl", "--user", "enable", "--now", f"{_UNIT_NAME}.timer"])
     return (
-        f"systemd user timer {_unit_name()!r} installed — runs {when}. "
+        f"systemd user timer {_UNIT_NAME!r} installed — runs {when}. "
         "To keep it running while logged out: sudo loginctl enable-linger $USER"
     )
 
