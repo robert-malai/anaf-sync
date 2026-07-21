@@ -77,6 +77,8 @@ class SettingsView(QWidget):
         self._theme: Theme = LIGHT
         self._cif_buttons: dict[str, QToolButton] = {}
         self._artifact_boxes: dict[str, QCheckBox] = {}
+        self._baseline_form: config_io.SettingsForm | None = None
+        self._baseline_frequency = _DEFAULT_FREQ
 
         self._config = self._load_config()
         self._build()
@@ -99,7 +101,12 @@ class SettingsView(QWidget):
     # -- construction ---------------------------------------------------------
 
     def _build(self) -> None:
-        outer = QVBoxLayout(self)
+        existing_layout = self.layout()
+        if existing_layout is None:
+            outer = QVBoxLayout(self)
+        else:
+            assert isinstance(existing_layout, QVBoxLayout)
+            outer = existing_layout
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
@@ -125,8 +132,9 @@ class SettingsView(QWidget):
         outer.addWidget(scroll, 1)
         outer.addWidget(self._build_save_bar())
 
+        self._baseline_form = self._form()
+        self._baseline_frequency = self._frequency.currentIndex()
         self._refresh_preview()
-        self._update_save_enabled()
 
     def _section(self, title: str) -> None:
         header = QLabel(title.upper())
@@ -183,6 +191,7 @@ class SettingsView(QWidget):
         ):
             radio = QRadioButton(label)
             radio.setChecked(value == current_dir)
+            radio.clicked.connect(self._update_save_enabled)
             self._direction_group.addButton(radio)
             self._radios[value] = radio
             dir_layout.addWidget(radio)
@@ -198,6 +207,7 @@ class SettingsView(QWidget):
         self._lookback.setValue(self._config.lookback_days if self._config else 60)
         self._lookback_label = QLabel()
         self._lookback.valueChanged.connect(self._on_lookback)
+        self._lookback.valueChanged.connect(self._update_save_enabled)
         lb_layout.addWidget(self._lookback, 1)
         lb_layout.addWidget(self._lookback_label)
         self._on_lookback(self._lookback.value())
@@ -213,6 +223,7 @@ class SettingsView(QWidget):
         self._directory = QLineEdit(str(self._config.output.directory))
         self._directory.setReadOnly(True)
         self._directory.setProperty("mono", True)
+        self._directory.textChanged.connect(self._update_save_enabled)
         choose = QPushButton(strings.BTN_CHOOSE)
         choose.clicked.connect(self._on_choose_dir)
         dir_layout.addWidget(self._directory, 1)
@@ -252,6 +263,7 @@ class SettingsView(QWidget):
         for label, _kind, _value in _FREQUENCIES:
             self._frequency.addItem(label)
         self._frequency.setCurrentIndex(_DEFAULT_FREQ)
+        self._frequency.currentIndexChanged.connect(self._update_save_enabled)
         self._labeled(strings.SET_FREQUENCY, self._frequency)
 
         status = schedule_status()
@@ -394,8 +406,15 @@ class SettingsView(QWidget):
             self._preview.property("state") == "ok"
             and bool(self._selected_artifacts())
             and bool(self._selected_cifs())
+            and self._is_modified()
         )
         self._save_button.setEnabled(ok)
+
+    def _is_modified(self) -> bool:
+        return self._baseline_form is not None and (
+            self._form() != self._baseline_form
+            or self._frequency.currentIndex() != self._baseline_frequency
+        )
 
     # -- read form state ------------------------------------------------------
 
@@ -435,6 +454,9 @@ class SettingsView(QWidget):
         config_io.save(doc, self._config_path)
         self._reinstall_schedule_if_active()
         self._config = self._load_config()  # reload from disk, no cached copy
+        self._baseline_form = self._form()
+        self._baseline_frequency = self._frequency.currentIndex()
+        self._update_save_enabled()
         self.saved.emit()
 
     def _reinstall_schedule_if_active(self) -> None:
@@ -462,6 +484,7 @@ class SettingsView(QWidget):
                     widget.deleteLater()
         self._cif_buttons.clear()
         self._artifact_boxes.clear()
+        self._baseline_form = None
         self._config = self._load_config()
         self._build()
 
