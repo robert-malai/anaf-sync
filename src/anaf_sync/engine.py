@@ -222,7 +222,7 @@ async def _archive_message(
         message_id=item.id,
         cif=cif,
         direction=direction,
-        base_path=str(base),
+        base_path=base.as_posix(),
         artifacts=written,
         created_at=fields.pop("created"),
         **fields,

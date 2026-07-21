@@ -275,7 +275,11 @@ async def test_catalog_fields_land_in_the_db(tmp_path: Path) -> None:
     # The fake ZIP is not parseable UBL, so the partner CIF comes from the
     # listing's `detalii` prose (cif_emitent=222), the seller for a received one.
     assert row["partner_cif"] == "222"
-    assert row["base_path"] == str(tmp_path / "archive" / "111" / "received" / "m1")
+    # base_path is stored in canonical POSIX form, regardless of host OS.
+    assert (
+        row["base_path"]
+        == (tmp_path / "archive" / "111" / "received" / "m1").as_posix()
+    )
     # created_at threads from the listing's data_creare (202607181430).
     assert row["created_at"] == "2026-07-18T14:30:00"
 

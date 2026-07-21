@@ -204,9 +204,12 @@ class Archive:
         ``_{message_id}`` suffix; anything else — unowned, or this message's own
         prior path on ``--redownload`` or after a crash before recording — is
         returned as-is to be overwritten in place, never duplicated.
+
+        The registry key is the POSIX form (``as_posix``) so it stays canonical
+        across platforms; callers that persist ``base_path`` must store the same.
         """
         row = self._conn.execute(
-            "SELECT message_id FROM messages WHERE base_path = ?", (str(base),)
+            "SELECT message_id FROM messages WHERE base_path = ?", (base.as_posix(),)
         ).fetchone()
         if row is not None and row["message_id"] != message_id:
             return base.with_name(f"{base.name}_{message_id}")
