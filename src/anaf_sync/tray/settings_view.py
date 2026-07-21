@@ -50,6 +50,7 @@ from . import config_io
 from . import format as fmt
 from .flowgrid import ArtifactGrid
 from .preview import render_preview
+from .template_help import TemplateHelp, template_help_qss
 from .theme import LIGHT, MONO_FONT_FAMILY, Theme
 
 __all__ = ["SettingsView"]
@@ -293,8 +294,13 @@ class SettingsView(QWidget):
         self._preview = QLabel()
         self._preview.setObjectName("preview")
         self._preview.setWordWrap(True)
+        # Field → preview → reference. The preview is the primary feedback loop
+        # and stays adjacent to the field; the legend is secondary (handoff §3).
+        self._template_help = TemplateHelp()
+        self._template_help.insert_requested.connect(self._insert_into_template)
         tb_layout.addWidget(self._template)
         tb_layout.addWidget(self._preview)
+        tb_layout.addWidget(self._template_help)
         self._labeled("Șablon de denumire", template_box)
 
         cards = QWidget()
@@ -459,6 +465,16 @@ class SettingsView(QWidget):
         if chosen:
             self._directory.setText(chosen)
 
+    def _insert_into_template(self, text: str) -> None:
+        """Splice a variable at the caret, replacing any selection, and refocus.
+
+        ``QLineEdit.insert`` already does both halves of that; returning focus
+        to the field is what keeps the panel an authoring tool rather than a
+        detour — the user clicks a name and keeps typing.
+        """
+        self._template.insert(text)
+        self._template.setFocus()
+
     def _refresh_preview(self) -> None:
         result = render_preview(self._template.text(), directory=self._directory.text())
         if result.ok:
@@ -612,4 +628,4 @@ QToolButton {{ background-color:{theme.window_bg}; color:{theme.muted};
     color:{theme.faint}; }}
 #scheduleActive {{ color:{theme.green}; font-size:12.5px; }}
 #scheduleInactive {{ color:{theme.muted}; font-size:12.5px; }}
-"""
+""" + template_help_qss(theme)

@@ -122,12 +122,17 @@ artifacts = ["zip", "pdf"]        # și: xml, signature, metadata
 Șabloanele folosesc sintaxa `str.format` din Python peste contextul facturii:
 `number`, `issue_date` / `due_date` (date reale — specificatorii `strftime`
 funcționează), `issue_month` / `created_month` (numele lunii în română:
-`iulie`), `currency`, `total`, `kind`, `direction`, `cif`,
-`seller_name`/`seller_cif`, `buyer_name`/`buyer_cif`,
+`iulie`), `currency`, `kind`, `direction`, `cif`,
 `partner_name`/`partner_cif` (*cealaltă* parte, indiferent de direcție),
 `message_id`, `request_id`, `message_type`, `created`. Valorile substituite
 sunt sanitizate pentru sistemul de fișiere; un `/` literal în șablon creează
 foldere; fiecare artefact își adaugă propria extensie.
+
+Primele variabile din listă se completează din XML-ul facturii, deci pentru
+mesajele fără XML (fișiere de eroare, mesaje de la cumpărător) devin `unknown`.
+Doar `cif`, `direction`, `message_id`, `request_id`, `message_type`, `created`
+și `created_month` există întotdeauna — un șablon construit exclusiv din
+celelalte adună toate aceste mesaje pe aceeași cale.
 
 Orice variabilă acceptă o conversie de capitalizare: `{issue_month!u}` →
 `IULIE`, `{issue_month!c}` → `Iulie`, `{issue_month!l}` → `iulie` (implicit

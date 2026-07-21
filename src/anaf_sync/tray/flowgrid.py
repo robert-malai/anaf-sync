@@ -1,12 +1,16 @@
-"""The *Fișiere salvate* grid: equal columns that re-flow 3-up ⇄ 5-up.
+"""Equal-column grids that re-flow on the width they are handed.
 
 A ``QLayout`` subclass rather than ``resizeEvent`` arithmetic, so the Setări
-form keeps the one rule its elastic layout is built on (DESIGN.md §10). The
-column count is derived from the width the layout is handed, and the allowed
-counts are deliberately **only 3 and 5**: five artifacts in four columns strand
-one card alone on a second row, and 3 + 2 and 5 are the only clean partitions
-of five. :func:`column_count` is pure, so the rule is unit-tested without Qt
-geometry.
+form keeps the one rule its elastic layout is built on (DESIGN.md §10). Two
+users, both keyed to :data:`WIDE_BREAKPOINT` so the window has **one** reflow
+moment across its 760–1200 range rather than two competing ones:
+:class:`ArtifactGrid` for *Fișiere salvate* (3-up ⇄ 5-up) and the variable
+reference panel's group columns (1-up ⇄ 3-up, see :mod:`template_help`).
+
+The artifact counts are deliberately **only 3 and 5**: five artifacts in four
+columns strand one card alone on a second row, and 3 + 2 and 5 are the only
+clean partitions of five. :func:`column_count` and :func:`group_column_count`
+are pure, so both rules are unit-tested without Qt geometry.
 """
 
 from __future__ import annotations
@@ -14,7 +18,16 @@ from __future__ import annotations
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtWidgets import QLayout, QLayoutItem, QSizePolicy, QWidget
 
-__all__ = ["ArtifactGrid", "MIN_COLUMN_WIDTH", "SPACING", "column_count"]
+__all__ = [
+    "MIN_COLUMN_WIDTH",
+    "SPACING",
+    "WIDE_BREAKPOINT",
+    "ArtifactGrid",
+    "ColumnGrid",
+    "GroupGrid",
+    "column_count",
+    "group_column_count",
+]
 
 #: Below this per-card width the descriptions wrap to three lines and the
 #: one-row layout is *worse* than the 3-up it would replace — so the switch
@@ -25,6 +38,11 @@ SPACING = 8
 _NARROW_COLUMNS = 3
 _WIDE_COLUMNS = 5
 
+#: The single field-column width at which the Setări form re-flows (882px).
+#: Derived from the artifact rule, then *reused* by the variable panel — the
+#: number matters less than there being only one of it.
+WIDE_BREAKPOINT = _WIDE_COLUMNS * MIN_COLUMN_WIDTH + SPACING * (_WIDE_COLUMNS - 1)
+
 
 def column_count(width: int) -> int:
     """``5`` once every card clears :data:`MIN_COLUMN_WIDTH`, else ``3``.
@@ -32,18 +50,39 @@ def column_count(width: int) -> int:
     Four is never returned: it would leave a single card orphaned on the
     second row.
     """
-    needed = _WIDE_COLUMNS * MIN_COLUMN_WIDTH + SPACING * (_WIDE_COLUMNS - 1)
-    return _WIDE_COLUMNS if width >= needed else _NARROW_COLUMNS
+    return _WIDE_COLUMNS if width >= WIDE_BREAKPOINT else _NARROW_COLUMNS
 
 
-class ArtifactGrid(QLayout):
-    """Lays its items out in equal columns, 3-up or 5-up by available width."""
+def group_column_count(width: int) -> int:
+    """``3`` for the variable panel's groups past the breakpoint, else ``1``.
+
+    Two is never returned: three groups in two columns strand *Mesaj SPV*
+    alone on a second row, the same orphan the artifact rule avoids.
+    """
+    return 3 if width >= WIDE_BREAKPOINT else 1
+
+
+class ColumnGrid(QLayout):
+    """Lays its items out in equal columns; subclasses choose the count."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._items: list[QLayoutItem] = []
         self.setContentsMargins(0, 0, 0, 0)
         self.setSpacing(SPACING)
+
+    def columns_for(self, width: int) -> int:
+        """How many columns to use at ``width`` — the whole reflow rule."""
+        raise NotImplementedError
+
+    def widest_item(self) -> int:
+        """The widest item's minimum width, for rules that pack by measurement.
+
+        Measured rather than assumed: a hard-coded column width is wrong on the
+        first platform whose font metrics differ, which is the same trap the
+        handoff calls out for the Facturi table's column floors.
+        """
+        return max((item.minimumSize().width() for item in self._items), default=0)
 
     # -- the QLayout contract -------------------------------------------------
 
@@ -81,10 +120,9 @@ class ArtifactGrid(QLayout):
         return self.minimumSize()
 
     def minimumSize(self) -> QSize:  # noqa: N802 — Qt override
-        item_width = max(
-            (item.minimumSize().width() for item in self._items), default=0
-        )
-        width = item_width * _NARROW_COLUMNS + SPACING * (_NARROW_COLUMNS - 1)
+        item_width = self.widest_item()
+        narrow = self.columns_for(0)
+        width = item_width * narrow + SPACING * (narrow - 1)
         return QSize(width, self.heightForWidth(max(width, 1)))
 
     # -- layout ---------------------------------------------------------------
@@ -93,7 +131,7 @@ class ArtifactGrid(QLayout):
         """Place (or just measure) the items; returns the total height."""
         if not self._items:
             return 0
-        columns = column_count(rect.width())
+        columns = self.columns_for(rect.width())
         column_width = max(1, (rect.width() - SPACING * (columns - 1)) // columns)
         y = rect.y()
         total = 0
@@ -115,6 +153,20 @@ def _item_height(item: QLayoutItem, width: int) -> int:
     if widget is not None and widget.hasHeightForWidth():
         return int(widget.heightForWidth(width))
     return int(item.sizeHint().height())
+
+
+class ArtifactGrid(ColumnGrid):
+    """The *Fișiere salvate* grid: 3-up or 5-up by available width."""
+
+    def columns_for(self, width: int) -> int:
+        return column_count(width)
+
+
+class GroupGrid(ColumnGrid):
+    """The variable panel's group columns: 1-up or 3-up, same breakpoint."""
+
+    def columns_for(self, width: int) -> int:
+        return group_column_count(width)
 
 
 def stretchable(widget: QWidget) -> QWidget:

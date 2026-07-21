@@ -6,7 +6,7 @@ UI for **anaf-sync**, a cross-platform tray tool that archives Romanian e-Factur
 Facturi and Setări are two independent top-level windows, **not** pages of a sidebar-switched stack: the catalog is a surface the user leaves open, Setări is a bounded editing task with an explicit commit boundary (save writes, cancel closes).
 
 ## About the Design Files
-`mockup/anaf-sync Mockup.dc.html` (open in a browser, keep `support.js` next to it) is a **design reference built in HTML** — a clickable prototype showing intended look and behavior. It is NOT production code. The task is to **recreate it in PySide6** using Qt idioms and the existing `anaf_sync` package (`config.py`, `state.py`) as the data layer. On-screen anchors: `#1a` tray menu, `#1b` Facturi, `#1c` Setări.
+`mockup/mockup.html` (open in a browser, keep `support.js` next to it) is a **design reference built in HTML** — a clickable prototype showing intended look and behavior. It is NOT production code. The task is to **recreate it in PySide6** using Qt idioms and the existing `anaf_sync` package (`config.py`, `state.py`) as the data layer. On-screen anchors: `#1a` tray menu, `#1b` Facturi, `#1c` Setări.
 
 ## Fidelity
 **High-fidelity.** Colors, spacing, typography, copy, and states are final. Recreate faithfully, but prefer native Qt controls where they match (menus, scrollbars, selects, calendar) over pixel-cloning browser widgets.
@@ -84,9 +84,97 @@ Scrollable form, three sections with uppercase 11px faint headers, separated by 
 **Arhivă**
 - *Dosar arhivă* → `output.directory`: mono read-only field "~/Facturi" + "Alege…" (`QFileDialog.getExistingDirectory`).
 - *Șablon de denumire* → `output.template`: mono editable field, default `{cif}/{direction}/{issue_date:%Y}/{issue_date:%m}/{issue_date:%Y-%m-%d}_{number}_{partner_name}`. **Live preview** below on every keystroke, rendered against a sample invoice:
-  - valid → green box: `Previzualizare: ~/Facturi/12345678/received/2026/07/2026-07-03_FCT-1001_ACME CONSTRUCT S.R.L..zip`
+  - valid → green box: `Previzualizare: ~/Facturi/12345678/received/2026/07/2026-07-03_FCT-1001_ACME CONSTRUCT S.R.L.zip`
   - unknown variable → red box: `Variabilă necunoscută: {numer}`
-  Valid variables (from `template.py`/config docs): number, issue_date, due_date, currency, total, kind, direction, cif, seller_name, seller_cif, buyer_name, buyer_cif, partner_name, partner_cif, message_id, request_id, message_type, created. Dates take strftime specs.
+
+  Note the preview ends `S.R.L.zip`, not `S.R.L..zip`: `template.py` strips a
+  trailing dot from every substituted value because Windows rejects a path
+  segment that ends in one. Do not hand-write examples of a sanitiser's output
+  — render them.
+
+- **Variable reference panel** (under the preview, inside the same field column).
+  A disclosure — `▸ Variabile disponibile (15)` — collapsed by default, expanding
+  to a panel-bg card. It exists because the template field is the only control in
+  Setări that assumes a vocabulary the UI never shows: today the form teaches that
+  vocabulary by punishment (type `{numer}`, get a red box and a dead save button).
+  A disclosure rather than a tooltip (which can't be scanned while typing, or
+  clicked), a dialog (modal focus steals the caret, killing the edit-preview loop
+  that is the whole point), or a permanent panel (~240px of the 620px minimum
+  height, for a control most users touch once).
+  - Each row is `{name}` (mono chip) · Romanian description · **the value that
+    name renders to for the same sample invoice the green box above is using**.
+    That third column is the point: the panel is not documentation *about* the
+    variables, it is the preview's sample decomposed, so "what will this put in
+    my folder name" is answered without a round-trip through the field.
+  - Rendered values are produced by `PathTemplate("{name}").render(sample_context())`
+    — never written by hand — so the legend cannot disagree with a real sync.
+    This is why `{created}` shows `2026-07-06 09-30-00` (`:` is illegal in a path),
+    which is the fastest possible argument for `{created:%H%M}`.
+  - **Click a row → insert `{name}` at the caret** in the template field, then
+    return focus to it; the panel authors, it does not only explain. Rows are
+    focusable, so Tab walks the list and Space inserts. Hover: row-hover bg, the
+    mono chip flips to accent.
+  - An amber **●** marks every variable that comes from the parsed invoice, with
+    one footnote: *"● se completează din XML-ul facturii; pentru mesaje fără XML
+    (fișiere de eroare, mesaje de la cumpărător) devin `unknown`."* A template
+    built only from dotted variables collapses whole classes of message into one
+    colliding `unknown/unknown.zip`. `{partner_cif}` keeps the dot even though it
+    usually falls back to ANAF's `sender_cif`/`receiver_cif` — "may be unknown"
+    is the safe reading, and a third marker state would cost more than it explains.
+  - **Expanding never resizes the window**: the list caps at 300px with its own
+    scrollbar, and the form's existing `QScrollArea` absorbs the rest, so the
+    pinned save bar survives the 620px minimum height. 300 is set just above what
+    the 3-column layout needs (~264px measured), so past the breakpoint the whole
+    list is visible at once and only the stacked layout scrolls — otherwise the
+    wide layout buys nothing. Expanded/collapsed persists in `QSettings` next to
+    the window geometry.
+  - Reflow: stacked groups → three side-by-side group columns at a field column of
+    **882px** — deliberately the same breakpoint as the artifact grid, so the
+    window has one reflow moment across its 760–1200 range, not two.
+  - The specifier strip does **not** use that breakpoint. It is a row of
+    fixed-size examples rather than elastic columns, so it packs as many chips
+    per row as measurably fit (up to four). A guessed column count is what made
+    the whole form scroll horizontally at 760: four chips are ~1040px wide and
+    even two overflow the field column.
+
+  **The 15 valid variables**, grouped as the panel groups them, with the sample
+  values it renders. `●` = XML-derived, may be `unknown`.
+
+  | Grup | Variabile |
+  |---|---|
+  | Factura | ● `{number}` FCT-1001 · ● `{issue_date}` 2026-07-03 · ● `{issue_month}` iulie · ● `{due_date}` 2026-08-02 · ● `{kind}` invoice (sau `credit_note`) · ● `{currency}` RON |
+  | Partener | ● `{partner_name}` ACME CONSTRUCT S.R.L · ● `{partner_cif}` 12345670 · `{cif}` 12345678 · `{direction}` received |
+  | Mesaj SPV | `{message_id}` 3210447815 · `{request_id}` 4similarid · `{message_type}` FACTURA PRIMITA · `{created}` 2026-07-06 09-30-00 · `{created_month}` iulie |
+
+  Format specifiers live in a strip pinned below a 1px rule at the bottom of the
+  card, so they survive scrolling of the list. Two rows — dates and case — because
+  every remaining variable is a date or a string:
+  - **Date**: `{issue_date:%Y}` → 2026 · `{issue_date:%m}` → 07 · `{issue_date:%Y-%m-%d}` → 2026-07-03 · `{created:%H%M}` → 0930. One faint line says any `strftime` spec works, rather than listing them.
+  - **Litere**: `{issue_month!u}` → IULIE · `{issue_month!c}` → Iulie · `{issue_month!l}` → iulie · `{partner_name!t}` → Acme Construct S.R.L. These four are anaf-sync's own conversions (`template.py`) and appear nowhere else in the UI; the strip is their only discoverable home.
+
+  Clicking a specifier example inserts the whole `{issue_date:%Y}` form.
+
+  **Five names were removed from the template context** to get to 15 — `total`,
+  `seller_name`, `seller_cif`, `buyer_name`, `buyer_cif`. A path template names a
+  document; an amount is a fact *about* it, and `{total}` in a path changes the
+  archive location if ANAF ever restates a total. `seller_*`/`buyer_*` are the same
+  two parties as `{partner_*}` and `{cif}`, addressed by role instead of by
+  relationship — keeping both spellings invites the one template that is silently
+  wrong half the time (`{seller_name}` under `direction = both` files *your own*
+  company as the folder for every invoice you sent). `{partner_name}` is correct in
+  both directions by construction, which is why `context.py` derives it.
+
+  **Implemented.** `context.build_context` and `preview.sample_context` dropped
+  those five; `_Invoice`/`_project` keep all five (they still feed `partner_*`,
+  and `catalog_fields` still exports `total` for the Facturi table), so only the
+  template-facing dict shrank. `tests/test_tray_template_help.py` asserts the
+  panel's name set equals `set(sample_context())`, and `test_tray_preview.py`
+  asserts that set equals `set(build_context(...))` — so adding a variable to
+  `context.py` without documenting it fails the suite instead of quietly
+  producing another stale list. This **breaks existing `config.toml` files** that
+  use any of the five (they now raise `TemplateError`), which is acceptable
+  pre-1.0 given the default template uses none of them, but needs a CHANGELOG
+  line.
 - *Fișiere salvate* → `output.artifacts`: checkbox cards in a grid that re-flows 3-up ⇄ 5-up with the field column (never 4 — see above). Names stay in English mono; descriptions Romanian 11px faint: **zip** "arhiva semnată originală" ✓, **pdf** "redarea oficială ANAF" ✓, **xml** "XML-ul UBL al facturii", **signature** "semnătura MF detașată", **metadata** "fișier JSON cu detaliile mesajului". Checked card: accent border + accent-soft bg.
 
 **Programare**
@@ -105,6 +193,7 @@ Scrollable form, three sections with uppercase 11px faint headers, separated by 
 - Hovers: menu items → accent bg; table rows → hover bg; header boundaries → accent separator. No animations required; instant state changes are fine (desktop feel).
 - Buttons "Deschide PDF"/"Arată în dosar" → open file / reveal in file manager. "Reîncearcă acum" → trigger a sync for that message.
 - Template preview re-renders per keystroke; unknown `{var}` → error state, save should be blocked while invalid.
+- Variable panel: the disclosure toggles on click and on Space/Enter; clicking a variable or a specifier example splices its text at the template field's caret (replacing any selection) and re-renders the preview on the same path as typing.
 
 ## State Management
 Runtime state: selected message_id; filter chip; period (+ custom from/to); delay threshold (days); template text (+ validity); CIF list (free entry, min 1); direction; lookback_days; artifact set (min 1); frequency. Persisted via `SyncConfig` → `config.toml`. Catalog/failures read from `state.py`'s SQLite (`messages`, `failures` tables). Tray state = f(failures, auth): any failure → amber; auth expired/sync broken → red; else green.
@@ -124,10 +213,10 @@ Table "Data" column shows the issue date.
 Romanian number format (1.234,56 RON), **Romanian dates everywhere: `zz.ll.aaaa`** ("18.07.2026" — never an abbreviated month, never ISO), correct diacritics everywhere. ISO stays internal: it is what the catalog stores and sorts by, and `{issue_date:%Y-%m-%d}` inside the path template is a *filename* convention, not a display format — do not conflate the two. Never translate code identifiers ({cif}, zip, pdf, config.toml, anafpy auth login).
 
 ## Suggested Qt mapping
-QSystemTrayIcon + QMenu (QWidgetAction header/alert) · two independent top-level windows — QMainWindow for Facturi (980×620 min, no max), QDialog/QWidget for Setări (760×620 min, 1200×780 max) · custom QLayout subclass (flow-layout style) for the artifact cards, no QStackedWidget · QLineEdit (search) · QToolButton checkable chips · QTableView + QAbstractTableModel + QSortFilterProxyModel · custom QStyledItemDelegate for pills + red stripe · QHeaderView with Interactive sections + one Stretch section · details pane QWidget/QFrame · QDateEdit + calendar popup (QCalendarWidget subclass for range) · QRadioButton, QSlider, QComboBox, QCheckBox cards · QSS themed from the token table (light/dark via two QSS sheets or QPalette).
+QSystemTrayIcon + QMenu (QWidgetAction header/alert) · two independent top-level windows — QMainWindow for Facturi (980×620 min, no max), QDialog/QWidget for Setări (760×620 min, 1200×780 max) · custom QLayout subclass (flow-layout style) for the artifact cards, no QStackedWidget · QLineEdit (search) · QToolButton checkable chips · QTableView + QAbstractTableModel + QSortFilterProxyModel · custom QStyledItemDelegate for pills + red stripe · QHeaderView with Interactive sections + one Stretch section · details pane QWidget/QFrame · QDateEdit + calendar popup (QCalendarWidget subclass for range) · QRadioButton, QSlider, QComboBox, QCheckBox cards · variable panel as a `QToolButton` (`ArrowType.Right/Down`) over a `QFrame` card, rows as flat focusable `QToolButton`s, `QLineEdit.insert()` for the caret splice · QSS themed from the token table (light/dark via two QSS sheets or QPalette).
 
 ## Out of scope — do not add
 No login/credential UI (auth is the anafpy CLI), no delete/edit/upload, no charts/dashboards, no environment switcher, no onboarding, no pagination.
 
 ## Files
-- `mockup/anaf-sync Mockup.dc.html` — the clickable reference (open in a browser; `support.js` must sit alongside). Anchors: #1a tray, #1b Facturi, #1c Setări. A light/dark switch is available in the design tool's Tweaks panel; token table above covers both.
+- `mockup/mockup.html` — the single clickable reference (open in a browser; `support.js` must sit alongside). Anchors: #1a tray, #1b Facturi, #1c Setări. A **light/dark picker sits at the top of the canvas** — mockup chrome, not product UI — so the file is reviewable in a plain browser and not only inside the design tool's Tweaks panel, which drives the same `theme` prop. The Tweaks panel also carries `templateError` (preview error state) and `variablePanel` (variable reference expanded/collapsed).

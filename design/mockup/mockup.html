@@ -17,9 +17,29 @@ a{color:#33658A;}a:hover{color:#264d69;}
 .arts-field{container-type:inline-size}
 .arts{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr));}
 @container (min-width:882px){.arts{grid-template-columns:repeat(5,minmax(0,1fr));}}
+/* Variable reference panel — same 882px breakpoint as the artifact grid, so
+   the window has one reflow moment across its 760–1200 range, not two. */
+.vars-field{container-type:inline-size}
+.vargroups{display:grid;gap:4px 14px;grid-template-columns:minmax(0,1fr);}
+@container (min-width:882px){.vargroups{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;}}
+.varrow:hover{background:var(--hover)}
+.varrow:hover .varname{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.specex:hover{background:var(--hover)}
+.disclose:hover{color:var(--accent)}
 </style>
 </helmet>
 <div data-theme="{{theme}}" style="min-height:100vh;background:var(--desk);color:var(--text);padding:48px 56px;display:flex;flex-direction:column;gap:64px;font-size:13px">
+
+<!-- Mockup chrome, not product UI: the theme switch, so this file is reviewable
+     in a plain browser and not only inside the design tool's Tweaks panel. -->
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:-40px">
+  <span style="color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Previzualizare mockup</span>
+  <div style="display:flex;gap:4px;background:var(--win);border:1px solid var(--border);border-radius:8px;padding:3px">
+    <sc-for list="{{themeOpts}}" as="t" hint-placeholder-count="2">
+      <button onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+    </sc-for>
+  </div>
+</div>
 
 <section id="1a" style="display:flex;flex-direction:column;gap:16px">
   <div style="display:flex;align-items:center;gap:10px"><a href="#1a" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1a</a><span style="color:var(--muted);font-size:12px">Meniu tray — trei stări</span></div>
@@ -301,6 +321,50 @@ a{color:#33658A;}a:hover{color:#264d69;}
                 <sc-if value="{{tplBad}}" hint-placeholder-val="{{ false }}">
                   <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;background:var(--red-bg);border:1px solid var(--red);border-radius:6px;padding:7px 10px;color:var(--red)">{{tplError}}</div>
                 </sc-if>
+
+                <div class="vars-field">
+                  <button class="disclose" onClick="{{toggleVars}}" style="display:flex;align-items:center;gap:6px;margin-top:2px;padding:3px 4px;border:none;background:none;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;border-radius:4px">
+                    <span style="{{varsArrow}}">▸</span>Variabile disponibile <span style="color:var(--faint);font-size:11px">({{varsCount}})</span>
+                  </button>
+                  <sc-if value="{{varsOpen}}" hint-placeholder-val="{{ true }}">
+                    <div style="margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+                      <div style="padding:8px 12px 2px;color:var(--faint);font-size:11px">Click pe o variabilă pentru a o insera în șablon. Valorile sunt cele ale facturii-exemplu din previzualizare.</div>
+                      <div style="max-height:240px;overflow-y:auto;padding:6px 8px 10px">
+                        <div class="vargroups">
+                          <sc-for list="{{varGroups}}" as="g" hint-placeholder-count="3">
+                            <div>
+                              <div style="color:var(--faint);font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;padding:8px 6px 3px">{{g.title}}</div>
+                              <sc-for list="{{g.rows}}" as="v" hint-placeholder-count="5">
+                                <div class="varrow" onClick="{{v.pick}}" style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px;align-items:baseline;padding:3px 6px;border-radius:5px;cursor:pointer">
+                                  <span class="varname" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--mono-bg);border:1px solid transparent;border-radius:5px;padding:1px 5px;white-space:nowrap">{{v.token}}</span>
+                                  <span style="color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{v.desc}}</span>
+                                  <span style="grid-column:1/-1;padding-left:2px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                                    <sc-if value="{{v.xml}}" hint-placeholder-val="{{ true }}"><span style="color:var(--amber);font-size:9px;vertical-align:1.5px;margin-right:3px">●</span></sc-if>{{v.val}}
+                                  </span>
+                                </div>
+                              </sc-for>
+                            </div>
+                          </sc-for>
+                        </div>
+                      </div>
+                      <div style="border-top:1px solid var(--border);padding:8px 12px 9px;background:var(--win)">
+                        <div style="display:grid;grid-template-columns:74px minmax(0,1fr);gap:3px 10px;align-items:baseline">
+                          <sc-for list="{{specs}}" as="s" hint-placeholder-count="2">
+                            <div style="color:var(--faint);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">{{s.key}}</div>
+                            <div>
+                              <sc-for list="{{s.items}}" as="x" hint-placeholder-count="4">
+                                <span class="specex" onClick="{{x.pick}}" style="display:inline-flex;align-items:baseline;gap:5px;margin:0 12px 3px 0;padding:1px 4px;border-radius:4px;cursor:pointer;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px">
+                                  <span style="color:var(--accent)">{{x.token}}</span><span style="color:var(--faint);font-size:10px">→</span><span style="color:var(--muted)">{{x.out}}</span>
+                                </span>
+                              </sc-for>
+                            </div>
+                          </sc-for>
+                        </div>
+                      </div>
+                      <div style="color:var(--faint);font-size:10.5px;line-height:1.5;padding:6px 12px 9px"><span style="color:var(--amber);font-size:9px;vertical-align:1.5px;margin-right:3px">●</span>se completează din XML-ul facturii; pentru mesaje fără XML (fișiere de eroare, mesaje de la cumpărător) devin <code style="font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--mono-bg);border-radius:3px;padding:0 3px">unknown</code>. Datele acceptă orice format <code style="font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--mono-bg);border-radius:3px;padding:0 3px">strftime</code>.</div>
+                    </div>
+                  </sc-if>
+                </div>
               </div>
               <div style="color:var(--muted);padding-top:5px">Fișiere salvate</div>
               <div class="arts-field">
@@ -350,6 +414,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
 <script type="text/x-dc" data-dc-script data-props="{
   &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;default&quot;: &quot;light&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Aspect&quot;},
   &quot;templateError&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Setări — stare șablon&quot;},
+  &quot;variablePanel&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Setări — panou variabile&quot;},
   &quot;delayLimit&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 5, &quot;min&quot;: 1, &quot;max&quot;: 30, &quot;unit&quot;: &quot;zile&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Facturi — prag întârziere&quot;}
 }">
 class Component extends DCLogic {
@@ -363,6 +428,8 @@ class Component extends DCLogic {
 
   componentDidUpdate(prev) {
     if (prev.templateError !== this.props.templateError) this.setState({ tpl: null });
+    if (prev.variablePanel !== this.props.variablePanel) this.setState({ varsOpen: null });
+    if (prev.theme !== this.props.theme) this.setState({ theme: null });
   }
 
   renderVals() {
@@ -577,17 +644,23 @@ class Component extends DCLogic {
 
     // Template preview
     const tpl = this.state.tpl ?? (this.props.templateError ? BAD : GOOD);
-    const d = (y, m, day) => ({ y, m, day });
-    const fmtDate = (v, f) => (f || "%Y-%m-%d")
-      .replace(/%Y/g, String(v.y)).replace(/%m/g, String(v.m).padStart(2, "0"))
-      .replace(/%d/g, String(v.day).padStart(2, "0")).replace(/%H/g, "06").replace(/%M/g, "00");
+    const d = (y, m, day, bare) => ({ y, m, day, bare });
+    // With no format spec a date renders as str(), then goes through the
+    // sanitiser — which is why {created} shows "09-30-00", not "09:30:00".
+    const fmtDate = (v, f) => !f ? (v.bare || (v.y + "-" + String(v.m).padStart(2, "0") + "-" + String(v.day).padStart(2, "0")))
+      : f.replace(/%Y/g, String(v.y)).replace(/%m/g, String(v.m).padStart(2, "0"))
+         .replace(/%d/g, String(v.day).padStart(2, "0")).replace(/%H/g, "09").replace(/%M/g, "30");
+    // The path-template context. Party names are the *sanitised* forms (Windows
+    // rejects a segment ending in a dot), so the preview matches a real render.
+    // seller_*/buyer_*/total are deliberately absent — see the handoff's
+    // §3 Arhivă, "Five names were removed from the template context".
     const CTX = {
-      number: "FCT-1001", issue_date: d(2026, 7, 3), due_date: d(2026, 8, 2), created: d(2026, 7, 3),
-      currency: "RON", total: "2480.00", kind: "invoice", direction: "received", cif: "12345678",
-      seller_name: "ACME CONSTRUCT S.R.L.", seller_cif: "18293401",
-      buyer_name: "EXEMPLU COM S.R.L.", buyer_cif: "12345678",
-      partner_name: "ACME CONSTRUCT S.R.L.", partner_cif: "18293401",
+      number: "FCT-1001", issue_date: d(2026, 7, 3), issue_month: "iulie",
+      due_date: d(2026, 8, 2), kind: "invoice", currency: "RON",
+      partner_name: "ACME CONSTRUCT S.R.L", partner_cif: "18293401",
+      cif: "12345678", direction: "received",
       message_id: "3204118867", request_id: "5501283340", message_type: "FACTURA PRIMITA",
+      created: d(2026, 7, 6, "2026-07-06 09-30-00"), created_month: "iulie",
     };
     let badVar = null;
     const rendered = tpl.replace(/\{([A-Za-z_]+)(?::([^{}]*))?\}/g, (m, name, fmt) => {
@@ -595,8 +668,66 @@ class Component extends DCLogic {
       const v = CTX[name];
       return typeof v === "object" ? fmtDate(v, fmt) : String(v);
     });
+
+    // Variable reference panel. Descriptions are Romanian UI copy; the rendered
+    // column is read straight out of CTX, so the legend cannot drift from the
+    // preview above it. `xml` marks the ● — only present when the message
+    // carried a readable UBL invoice.
+    const append = (text) => this.setState((s) => ({ tpl: (s.tpl ?? tpl) + text }));
+    const varDefs = [
+      ["Factura", [
+        ["number", "Numărul facturii", 1], ["issue_date", "Data emiterii", 1],
+        ["issue_month", "Luna emiterii, în litere", 1], ["due_date", "Data scadenței", 1],
+        ["kind", "Tipul documentului", 1], ["currency", "Moneda", 1],
+      ]],
+      ["Partener", [
+        ["partner_name", "Partenerul — după direcție", 1], ["partner_cif", "CIF-ul partenerului", 1],
+        ["cif", "CIF-ul urmărit — compania ta", 0], ["direction", "received sau sent", 0],
+      ]],
+      ["Mesaj SPV", [
+        ["message_id", "ID-ul mesajului în SPV", 0], ["request_id", "ID-ul descărcării", 0],
+        ["message_type", "Tipul mesajului la ANAF", 0], ["created", "Momentul încărcării în SPV", 0],
+        ["created_month", "Luna încărcării, în litere", 0],
+      ]],
+    ];
+    const varGroups = varDefs.map(([title, rows]) => ({
+      title,
+      rows: rows.map(([name, desc, xml]) => {
+        const v = CTX[name];
+        return {
+          token: "{" + name + "}", desc, xml: !!xml,
+          val: typeof v === "object" ? fmtDate(v, null) : String(v),
+          pick: () => append("{" + name + "}"),
+        };
+      }),
+    }));
+    const varsCount = varDefs.reduce((n, [, rows]) => n + rows.length, 0);
+    const specDefs = [
+      ["Date", [["{issue_date:%Y}", "2026"], ["{issue_date:%m}", "07"], ["{issue_date:%Y-%m-%d}", "2026-07-03"], ["{created:%H%M}", "0930"]]],
+      ["Litere", [["{issue_month!u}", "IULIE"], ["{issue_month!c}", "Iulie"], ["{issue_month!l}", "iulie"], ["{partner_name!t}", "Acme Construct S.R.L"]]],
+    ];
+    const specs = specDefs.map(([key, items]) => ({
+      key, items: items.map(([token, out]) => ({ token, out, pick: () => append(token) })),
+    }));
+    const varsOpen = this.state.varsOpen ?? (this.props.variablePanel !== false);
+    // The design tool drives `theme` from its Tweaks panel; the in-canvas
+    // switch below is what makes this file self-sufficient in a browser.
+    const theme = this.state.theme ?? this.props.theme ?? "light";
+    const themeOpts = [["light", "☀ Light"], ["dark", "☾ Dark"]].map(([value, label]) => {
+      const on = theme === value;
+      return {
+        label,
+        pick: () => this.setState({ theme: value }),
+        style: {
+          font: "inherit", fontSize: "12px", padding: "4px 11px", borderRadius: "6px", cursor: "pointer",
+          fontWeight: on ? 600 : 400, border: "none",
+          background: on ? "var(--accent)" : "transparent",
+          color: on ? "var(--on-accent)" : "var(--muted)",
+        },
+      };
+    });
     return {
-      theme: this.props.theme ?? "light",
+      theme, themeOpts,
       rows, chips, sel: selWithPill, cols, headStyle,
       periods, customPeriod: period === "Personalizat…",
       fromDate: ro(this.state.from), toDate: ro(this.state.to),
@@ -623,6 +754,9 @@ class Component extends DCLogic {
       tplOk: !badVar, tplBad: !!badVar,
       tplError: badVar ? "Variabilă necunoscută: {" + badVar + "}" : "",
       tplPreview: "~/Facturi/" + rendered + ".zip",
+      varGroups, varsCount, specs, varsOpen,
+      varsArrow: { display: "inline-block", width: "9px", color: "var(--faint)", transform: varsOpen ? "rotate(90deg)" : "none" },
+      toggleVars: () => this.setState({ varsOpen: !varsOpen }),
       noop: () => {},
     };
   }

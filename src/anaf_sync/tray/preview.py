@@ -31,7 +31,9 @@ def sample_context() -> dict[str, object]:
     """The handoff's sample invoice, covering every path-template variable.
 
     Values match §3: FCT-1001 / ACME CONSTRUCT S.R.L. / issued 2026-07-03 /
-    cif 12345678 / received. Keys mirror :func:`anaf_sync.context.build_context`.
+    cif 12345678 / received. Keys mirror :func:`anaf_sync.context.build_context`
+    exactly — :mod:`template_help` renders its reference table from this dict,
+    so a variable missing here is a variable the UI silently stops documenting.
     """
     issue = dt.date(2026, 7, 3)
     created = dt.datetime(2026, 7, 6, 9, 30)
@@ -48,12 +50,7 @@ def sample_context() -> dict[str, object]:
         "issue_month": "iulie",
         "due_date": dt.date(2026, 8, 2),
         "currency": "RON",
-        "total": 2480.00,
         "kind": "invoice",
-        "seller_name": "ACME CONSTRUCT S.R.L.",
-        "seller_cif": "12345670",
-        "buyer_name": "STUDIO EXEMPLU S.R.L.",
-        "buyer_cif": "12345678",
         "partner_name": "ACME CONSTRUCT S.R.L.",
         "partner_cif": "12345670",
     }

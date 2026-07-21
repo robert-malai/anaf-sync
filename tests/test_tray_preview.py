@@ -1,6 +1,9 @@
 """Template live preview via the production PathTemplate (no Qt)."""
 
+from anafpy.efactura import MessageListItem
+
 from anaf_sync.config import _DEFAULT_TEMPLATE
+from anaf_sync.context import build_context
 from anaf_sync.tray.preview import render_preview, sample_context
 
 
@@ -27,29 +30,27 @@ def test_directory_override_roots_the_path() -> None:
     assert result.text == "/data/Facturi/12345678.zip"
 
 
-def test_sample_context_covers_every_documented_variable() -> None:
-    # The handoff's valid-variable list (§3) must all resolve, not error.
-    variables = [
-        "number",
-        "issue_date",
-        "due_date",
-        "currency",
-        "total",
-        "kind",
-        "direction",
-        "cif",
-        "seller_name",
-        "seller_cif",
-        "buyer_name",
-        "buyer_cif",
-        "partner_name",
-        "partner_cif",
-        "message_id",
-        "request_id",
-        "message_type",
-        "created",
-    ]
-    context = sample_context()
-    for name in variables:
-        assert name in context, name
+def test_sample_context_mirrors_the_real_template_context() -> None:
+    """The sample is the legend's data source, so it must not drift.
+
+    `template_help` renders its reference table from `sample_context`, and the
+    engine renders real paths from `build_context` — a key in one and not the
+    other means the panel documents a variable that does not exist, or hides
+    one that does.
+    """
+    real = build_context(
+        MessageListItem.model_construct(
+            id="3001",
+            request_id="5001",
+            message_type="FACTURA PRIMITA",
+            created_at="202607181430",
+        ),
+        None,
+        cif="12345678",
+    )
+    assert set(sample_context()) == set(real)
+
+
+def test_every_sample_variable_renders() -> None:
+    for name in sample_context():
         assert render_preview(f"{{{name}}}").ok, name
