@@ -44,7 +44,7 @@ qt = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anafpy", specifier = ">=0.5.0" },
+    { name = "anafpy", specifier = ">=0.5.1" },
     { name = "cyclopts", specifier = ">=3.14" },
     { name = "filelock", specifier = ">=3.13" },
     { name = "platformdirs", specifier = ">=4.2" },
@@ -72,7 +72,7 @@ qt = [{ name = "pytest-qt", specifier = ">=4.4" }]
 
 [[package]]
 name = "anafpy"
-version = "0.5.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -86,9 +86,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "xsdata-pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/af/a811720d207d6c4195ad57b64d1cb194f7fc5a53e735cc5cbf5833170543/anafpy-0.5.0.tar.gz", hash = "sha256:dd885d3562323805d197188d81d464e63d8c048a397d501e8d54158506b89878", size = 3887201 }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/2e/8617997c8039abcc104f260ff73ad5395e874434075b488744276c3d414f/anafpy-0.5.1.tar.gz", hash = "sha256:feaf5b106bd576879b449b28bb5a41240008a507ce145802dd66920bc6ad4926", size = 3887742 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/a4/0d49a469a24d1a307ef4f56e5c78743a5c3f29734ec36ca6be900d263fc1/anafpy-0.5.0-py3-none-any.whl", hash = "sha256:ad3704e53d7763f3d03564aef6cfa77486f9af14dd32e399d9e2e2e350a4331b", size = 720759 },
+    { url = "https://files.pythonhosted.org/packages/27/1f/b0706630b9451276f5d29d7ca76ea4a332a0d71f8c57436ae720600302e3/anafpy-0.5.1-py3-none-any.whl", hash = "sha256:b3eeafebf037767625bdf08790b9bbe19d3f580aac390f715f79f1584e66f298", size = 721055 },
 ]
 
 [[package]]

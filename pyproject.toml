@@ -19,7 +19,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "anafpy>=0.5.0",
+    "anafpy>=0.5.1",
     "cyclopts>=3.14",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
