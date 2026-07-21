@@ -15,8 +15,8 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, QUrl
+from PySide6.QtGui import QAction, QActionEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -190,6 +190,22 @@ class TrayApp:
             f"{MENU_ARCHIVED_INVOICES}  {status.archived_count}"
         )
         self._folder_action.setEnabled(status.output_dir is not None)
+        self._remeasure_header()
+
+    def _remeasure_header(self) -> None:
+        """Make the menu re-measure the header now that its text changed.
+
+        `QMenu` caches one rect per action and recomputes only when an action
+        itself changes; new text inside a `QWidgetAction`'s widget is invisible
+        to it, however loudly the label calls `updateGeometry`. So a subline
+        that grows from one line to two keeps the height measured for the short
+        text, and the wrapped label paints centred inside that short rect —
+        clipped at the bottom and colliding with the headline above. Closing
+        and reopening the menu does not heal it; only an action event does.
+        """
+        QCoreApplication.sendEvent(
+            self._menu, QActionEvent(QEvent.Type.ActionChanged, self._header_action)
+        )
 
     def _apply_alert(self, status: TrayStatus, theme: Theme) -> None:
         if status.alert_text is None:

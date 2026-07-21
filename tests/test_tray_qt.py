@@ -12,6 +12,8 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
 from anaf_sync.config import write_default_config  # noqa: E402
 from anaf_sync.state import Archive, RunRecord  # noqa: E402
 from anaf_sync.tray.app import (  # noqa: E402
@@ -22,7 +24,11 @@ from anaf_sync.tray.app import (  # noqa: E402
 )
 from anaf_sync.tray.icons import status_icon  # noqa: E402
 from anaf_sync.tray.runner import SyncRunner  # noqa: E402
-from anaf_sync.tray.status import ARCHIVE_UP_TO_DATE, NEEDS_ATTENTION  # noqa: E402
+from anaf_sync.tray.status import (  # noqa: E402
+    ARCHIVE_UP_TO_DATE,
+    NEEDS_ATTENTION,
+    TrayStatus,
+)
 from anaf_sync.tray.theme import DARK, LIGHT, menu_qss, status_color  # noqa: E402
 from anaf_sync.tray.watcher import StateWatcher  # noqa: E402
 
@@ -62,6 +68,19 @@ def _app(tmp_path: Path) -> TrayApp:
     config = tmp_path / "config.toml"
     write_default_config(config)
     return TrayApp(state_path=tmp_path / "state.db", config_path=config)
+
+
+def _status(*, subline: str) -> TrayStatus:
+    return TrayStatus(
+        state="ok",
+        headline=ARCHIVE_UP_TO_DATE,
+        subline=subline,
+        alert_text=None,
+        alert_command=None,
+        alert_state="ok",
+        archived_count=10,
+        output_dir=None,
+    )
 
 
 def test_tray_app_ok_state(qtbot: object, tmp_path: Path) -> None:
@@ -111,6 +130,35 @@ def test_tray_app_folder_disabled_when_config_missing(
     )
     app.refresh()
     assert not app._folder_action.isEnabled()
+
+
+def test_menu_header_grows_when_the_subline_starts_wrapping(
+    qtbot: object, tmp_path: Path
+) -> None:
+    """Regression: the header kept the height measured for a shorter subline.
+
+    `QMenu` caches action rects and never sees a label's text change, so a
+    subline that grew to two lines ("acum 19 minute · 10 facturi noi") was
+    painted into the one-line rect measured at the first popup — clipped, and
+    overlapping the headline. Reopening the menu did not heal it, which is why
+    it looked intermittent rather than broken.
+    """
+    app = _app(tmp_path)
+    subline = app._subline_label
+    header = app._header_action.defaultWidget()
+
+    app._apply(_status(subline="Niciodată"))
+    app._menu.popup(app._menu.pos())
+    QApplication.processEvents()
+    assert subline.height() >= subline.heightForWidth(subline.width())
+
+    app._apply(_status(subline="Ultima sincronizare: acum 19 minute · 10 facturi noi"))
+    QApplication.processEvents()
+    assert subline.text().endswith("facturi noi")  # the long text really landed
+    assert subline.height() >= subline.heightForWidth(subline.width())
+    assert header.height() >= header.sizeHint().height()
+
+    app._menu.close()
 
 
 def test_tray_app_sync_item_toggles_while_running(
