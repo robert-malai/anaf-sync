@@ -21,7 +21,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import ValidationError
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -93,6 +94,43 @@ _NEEDS_INIT = "Rulați `anaf-sync init` pentru a crea un config.toml."
 CIF_INVALID = "CIF invalid — folosește doar cifre, fără prefixul RO."
 CIF_DUPLICATE = "CIF-ul este deja în listă."
 CIF_LAST_REMAINS = "Cel puțin un CIF trebuie să rămână în listă."
+
+
+class _ElidedLabel(QLabel):
+    """A label that truncates with `…` rather than forcing its parent wider.
+
+    A plain `QLabel` refuses to be narrower than its whole sentence, and the
+    save bar is pinned *outside* the form's scroll area — so its width is a
+    hard floor on the entire window, one no scrolling can absorb. That made
+    Setări unshrinkable below the full width of this note, which on Windows
+    fonts came to 1204px, past the window's own 1200px maximum (#1).
+
+    Eliding rather than wrapping because the bar is pinned: a bar that grows
+    taller as the window narrows moves the save button out from under the
+    pointer, which is worse than truncating a secondary hint. The full text
+    stays available as the tooltip.
+    """
+
+    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._full_text = text
+        self.setToolTip(text)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 — Qt override
+        # Room for the ellipsis and nothing more; the layout decides the rest.
+        # QLabel would otherwise report the full sentence here, which is the
+        # whole problem.
+        return QSize(
+            self.fontMetrics().horizontalAdvance("…"),
+            super().minimumSizeHint().height(),
+        )
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 — Qt override
+        painter = QPainter(self)
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.width()
+        )
+        painter.drawText(self.rect(), int(self.alignment()), elided)
 
 
 class SettingsView(QWidget):
@@ -385,7 +423,7 @@ class SettingsView(QWidget):
         bar.setObjectName("saveBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(24, 10, 24, 10)
-        note = QLabel(
+        note = _ElidedLabel(
             "Modificările se scriu în config.toml — fișierul rămâne editabil manual"
         )
         note.setObjectName("saveNote")

@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QDialog  # noqa: E402
+from PySide6.QtWidgets import QDialog, QLabel  # noqa: E402
 
 from anaf_sync.config import write_default_config  # noqa: E402
 from anaf_sync.tray import settings_view as sv  # noqa: E402
@@ -16,6 +16,10 @@ from anaf_sync.tray.flowgrid import (  # noqa: E402
     column_count,
 )
 from anaf_sync.tray.settings_view import _FORM_CHROME  # noqa: E402
+
+#: The save bar's own 24px margins either side — the slack the note is allowed
+#: beyond the sentence itself before it counts as pinning the window open.
+_SAVE_BAR_MARGINS = 48
 from anaf_sync.tray.settings_window import SettingsWindow  # noqa: E402
 from anaf_sync.tray.window import MainWindow  # noqa: E402
 
@@ -83,6 +87,27 @@ def test_a_wider_reference_panel_raises_the_window_minimum(
 
     assert window.minimumWidth() == 900 + _FORM_CHROME
     assert window.minimumWidth() > 760
+
+
+def test_the_save_note_never_sets_the_window_floor(
+    qtbot: object, tmp_path: Path
+) -> None:
+    """#1: the save bar is pinned outside the scroll area, so its width is a
+    hard floor on the whole window — nothing can scroll it away.
+
+    As a plain `QLabel` the note refused to be narrower than its full sentence,
+    which on Windows fonts put the floor at 1204px, past the window's own
+    1200px maximum. The `min <= max` assertion is the one that broke there.
+    """
+    window = _window(tmp_path)
+    qtbot.addWidget(window)
+    note = window._view.findChild(QLabel, "saveNote")
+    assert note is not None
+
+    sentence = note.fontMetrics().horizontalAdvance(note.text())
+    assert note.minimumSizeHint().width() < sentence  # elides instead of pushing
+    assert window._view.minimumSizeHint().width() < sentence + _SAVE_BAR_MARGINS
+    assert window.minimumWidth() <= window.maximumWidth()
 
 
 def test_facturi_has_no_maximum(qtbot: object, tmp_path: Path) -> None:
