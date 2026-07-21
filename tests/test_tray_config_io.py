@@ -3,12 +3,14 @@
 from pathlib import Path
 
 import pytest
-import tomlkit
-from pydantic import ValidationError
 
-from anaf_sync.config import load_config, write_default_config
-from anaf_sync.tray import config_io
-from anaf_sync.tray.config_io import SettingsForm
+tomlkit = pytest.importorskip("tomlkit")
+
+from pydantic import ValidationError  # noqa: E402
+
+from anaf_sync.config import load_config, write_default_config  # noqa: E402
+from anaf_sync.tray import config_io  # noqa: E402
+from anaf_sync.tray.config_io import SettingsForm  # noqa: E402
 
 
 def _form_from(path: Path, **overrides: object) -> SettingsForm:

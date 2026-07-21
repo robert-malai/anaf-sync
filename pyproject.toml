@@ -19,7 +19,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "anafpy>=0.4.1",
+    "anafpy>=0.5.0",
     "cyclopts>=3.14",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
@@ -61,7 +61,9 @@ dev = [
 # pytest-qt lives in its own group, not `dev`: it hard-errors at startup when no
 # Qt binding is installed, so it must only be present alongside the `tray` extra.
 # Full dev / the tray CI job: `uv sync --extra tray --group qt`. A plain
-# `uv sync` gets neither, and the tray tests skip via `importorskip("PySide6")`.
+# `uv sync` gets neither, and the tray tests skip via `importorskip` on whichever
+# part of the extra they need — "PySide6" for the Qt views, "tomlkit" for the
+# Qt-free config round-trip.
 qt = ["pytest-qt>=4.4"]
 
 [build-system]
