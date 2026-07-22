@@ -39,7 +39,7 @@ Python-ul potrivit.
 
 anaf-sync nu are un sistem propriu de credențiale: refolosește autentificarea
 [anafpy](https://github.com/robert-malai/anafpy) — același login servește și
-serverul MCP anafpy. Certificatul digital e necesar **doar la autorizarea
+serverul MCP anafpy. Certificatul e necesar **doar la autorizarea
 inițială din browser**, cam o dată pe an; după aceea token-urile se
 reîmprospătează automat, fără certificat, deci rulările programate merg
 nesupravegheate.
@@ -74,15 +74,23 @@ Secret** — „parola" aplicației; păstrează-le în siguranță.
 export ANAFPY_CLIENT_ID=...          # sau într-un fișier .env
 export ANAFPY_CLIENT_SECRET=...
 
-anafpy auth login --redirect-uri https://localhost:8765/callback --paste
+anafpy auth login --redirect-uri https://localhost:8765/callback
 ```
 
-Se deschide browserul, îți alegi certificatul, iar ANAF redirecționează către
-callback. Cu `--paste` nu pornește niciun server local: browserul va afișa o
-eroare de conexiune, dar bara de adrese conține URL-ul complet cu codul de
-autorizare — îl copiezi în terminal. (Alternativ, cu un certificat TLS local —
-de ex. generat cu [mkcert](https://github.com/FiloSottile/mkcert) —
-`--tls-cert`/`--tls-key` capturează redirectul automat, fără copiat.)
+Se deschide browserul, îți alegi certificatul digital, iar ANAF
+redirecționează către callback-ul local. Pentru că ANAF acceptă doar
+callback-uri `https://`, iar pentru `localhost` nicio autoritate nu emite
+certificate, anafpy generează pe loc un certificat de unică folosință pentru
+acest callback: browserul va afișa **o singură dată** avertismentul
+„Connection is not private" („Conexiunea nu este privată"). E de așteptat —
+comanda te anunță dinainte; apasă „Advanced" → „Proceed to localhost" și
+autentificarea se încheie singură.
+
+Alternative: cu propriul certificat — de ex. generat cu
+[mkcert](https://github.com/FiloSottile/mkcert) — `--tls-cert`/`--tls-key`
+elimină avertismentul; iar `--paste` nu pornește niciun server local —
+browserul afișează o eroare de conexiune, tu copiezi URL-ul complet din bara
+de adrese în terminal (repede: codul ANAF expiră în ~60 de secunde).
 
 Token-urile se salvează în credential store-ul sistemului de operare. Pe
 mașini fără credential store (servere headless), folosește varianta pe
@@ -91,7 +99,7 @@ fișier: `ANAFPY_TOKEN_STORE_BACKEND=file` și
 
 `ANAFPY_CLIENT_ID` și `ANAFPY_CLIENT_SECRET` trebuie să rămână setate (în
 mediu sau în `.env`) și după login: cu ele își reîmprospătează rulările
-programate token-urile expirate. Token-ul de acces ține ~90 de zile,
+programate token-urile expirate, fără intervenția ta. Token-ul de acces ține ~90 de zile,
 refresh-ul ~365 — browserul și certificatul revin în joc doar când expiră și
 acesta.
 
@@ -147,7 +155,7 @@ Orice variabilă acceptă o conversie de capitalizare: `{issue_month!u}` →
 `IULIE`, `{issue_month!c}` → `Iulie`, `{issue_month!l}` → `iulie` (implicit
 numele lunilor sunt cu literă mică, conform normelor limbii române), iar
 `{partner_name!t}` → `Furnizor Srl` (fiecare cuvânt cu majusculă). Pentru
-foldere sortate cronologic, combinați numărul și numele lunii:
+foldere sortate cronologic, combină numărul și numele lunii:
 `{issue_date:%m}-{issue_month}` → `07-iulie`.
 
 ## Rulare
@@ -190,7 +198,7 @@ să șteargă mesajele după 60 de zile. Culoarea punctului de stare înseamnă:
 - **roșu** — sincronizarea nu funcționează (de obicei autentificarea ANAF a
   expirat — rulează `anafpy auth login`).
 
-Din meniu poți porni o sincronizare, deschide dosarul arhivei, răsfoi facturile
+Din meniu poți porni o sincronizare, deschide folderul arhivei, răsfoi facturile
 arhivate și edita configurația — fără să atingi `config.toml` manual (deși
 rămâne editabil manual oricând). Aplicația doar citește arhiva și scrie
 `config.toml`; orice descărcare o face tot `anaf-sync sync`.
@@ -245,4 +253,4 @@ TTY.
 ## Dezvoltare
 
 Documentația pentru dezvoltatori e în engleză: [CONTRIBUTING.md](CONTRIBUTING.md)
-(setup și quality gates), [DESIGN.md](DESIGN.md) (rațiunea arhitecturii).
+(setup și quality gates), [DESIGN.md](DESIGN.md) (design rationale).
