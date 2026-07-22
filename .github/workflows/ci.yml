@@ -45,8 +45,11 @@ jobs:
       - name: Sync dependencies (macOS/Windows — core only)
         if: runner.os != 'Linux'
         run: uv sync
+      # junit_family=legacy is what Codecov's test analytics parser expects —
+      # it keeps the full module path in classname, so flaky tests stay
+      # attributable across the matrix.
       - name: Tests
-        run: uv run pytest -q --cov --cov-report=xml
+        run: uv run pytest -q --cov --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
       # Every leg uploads; Codecov merges them per commit — the macOS/Windows
       # legs execute scheduler branches the ubuntu leg never does. A Codecov
       # outage must not break the gates, hence fail_ci_if_error stays off.
@@ -56,6 +59,14 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
+      # Unlike coverage, this one runs even when the suite is red — a failed
+      # run is exactly the one whose test results are worth reading.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ matrix.os }}-py${{ matrix.python-version }}
       # The static gates are platform-independent; run them once per Python on
       # the Linux leg, which has PySide6 installed (mypy reads its stubs).
       - name: Ruff lint

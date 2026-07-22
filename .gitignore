@@ -14,9 +14,10 @@ wheels/
 .env.*
 *.env
 
-# Coverage
+# Coverage / test reports
 .coverage
 coverage.xml
+junit.xml
 
 # macOS Finder metadata
 .DS_Store
