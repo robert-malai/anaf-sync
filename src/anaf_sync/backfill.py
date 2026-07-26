@@ -123,12 +123,10 @@ def _index_one(
 
     message = DownloadedMessage.from_zip(path.read_bytes())
     view = message.view
-    if view is None or message.document is None or message.content_xml is None:
+    if view is None or message.content_xml is None:
         report.not_ubl += 1
         return
-    # The flat view feeds the catalog; the raw document decides direction,
-    # because a non-VAT buyer's CIF survives only there (see `own_side`).
-    side = own_side(message.document, config.cifs)
+    side = own_side(view, config.cifs)
     if side is None:
         report.foreign += 1
         return

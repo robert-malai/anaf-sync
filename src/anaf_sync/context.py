@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any
 
 from anafpy.efactura import MessageListItem
-from anafpy.efactura.authoring import InvoiceDocument
+from anafpy.efactura.authoring import InvoiceDocument, Party
 
 __all__ = [
     "DirectionLabel",
@@ -114,33 +114,29 @@ class _Invoice:
     partner_cif: str | None
 
 
-def _party_identifiers(party: Any) -> set[str]:
-    """Every CIF-shaped identifier one raw UBL party block carries.
+def _party_identifiers(party: Party) -> set[str]:
+    """Every CIF-shaped identifier a party carries.
 
-    Read off the *raw* document, not the flat view, because the view drops the
-    one that matters most here. A Romanian party that is not VAT-registered
-    files its CIF under ``PartyTaxScheme/CompanyID`` with the ``!VAT`` scheme
-    marker, and anafpy surfaces that as ``tax_registration_id`` — a field
-    :class:`Seller` has and :class:`Party` (the buyer) does not. Reading all
-    three UBL homes (tax scheme, legal entity, party identification) also
-    tolerates issuers that file the trade-registry number as the legal id;
-    ``_digits`` drops those (``F35/2068/2013``) on the way out.
+    CIUS-RO's BR-RO-120 identifies a party by the legal-entity ``CompanyID``
+    *or any* ``PartyTaxScheme/CompanyID`` — no VAT-scheme filter — so all four
+    homes are in play, and production invoices genuinely use different ones: a
+    VAT-registered party fills ``vat_id``, one below the registration threshold
+    fills ``tax_registration_id`` (marked ``!VAT``), and plenty carry only
+    ``legal_registration_id``. ``_digits`` drops whatever is not a CIF at all,
+    such as a trade-registry number (``F35/2068/2013``) filed as the legal id.
     """
-    raw: list[str | None] = []
-    for scheme in party.party_tax_scheme:
-        raw.append(_value_of(scheme.company_id))
-    for legal in party.party_legal_entity:
-        raw.append(_value_of(legal.company_id))
-    for identification in party.party_identification:
-        raw.append(_value_of(identification.id))
-    return {digits for value in raw if (digits := _digits(value))}
+    candidates = [
+        party.vat_id,
+        party.tax_registration_id,
+        party.legal_registration_id,
+        *(identifier.id for identifier in party.identifiers),
+    ]
+    return {digits for value in candidates if (digits := _digits(value))}
 
 
-def _value_of(node: Any) -> str | None:
-    return getattr(node, "value", None) if node is not None else None
-
-
-def own_side(document: Any, cifs: Iterable[str]) -> tuple[DirectionLabel, str] | None:
+def own_side(
+    view: InvoiceDocument, cifs: Iterable[str]
+) -> tuple[DirectionLabel, str] | None:
     """Classify a document by which side of it the operator is on.
 
     Returns ``(direction, own_cif)``, or ``None`` when neither party is one of
@@ -151,19 +147,11 @@ def own_side(document: Any, cifs: Iterable[str]) -> tuple[DirectionLabel, str] |
     better one, since ``tip`` is prose and a CIF is a CIF. Self-billing (the
     same CIF on both sides) classifies as ``sent``, matching the direction the
     document was filed under.
-
-    Args:
-        document: the raw UBL ``Invoice``/``CreditNote``
-            (``DownloadedMessage.document``), not the flat view — see
-            :func:`_party_identifiers` for why the view is not enough.
-        cifs: the operator's own CIFs, in any accepted shape.
     """
     own = {digits for cif in cifs if (digits := _digits(cif))}
-    seller = _party_identifiers(document.accounting_supplier_party.party) & own
-    if seller:
+    if seller := _party_identifiers(view.seller) & own:
         return "sent", next(iter(seller))
-    buyer = _party_identifiers(document.accounting_customer_party.party) & own
-    if buyer:
+    if buyer := _party_identifiers(view.buyer) & own:
         return "received", next(iter(buyer))
     return None
 

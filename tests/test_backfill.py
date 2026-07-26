@@ -37,11 +37,28 @@ _ADDRESS = PostalAddress(
 )
 
 
+def _buyer(cif: str = "RO111", *, identified_by: str = "vat_id") -> Party:
+    """A buyer carrying its CIF in one of the homes CIUS-RO allows.
+
+    BR-RO-120 accepts the legal-entity CompanyID *or any* PartyTaxScheme
+    CompanyID, and production invoices use all of them: a VAT-registered buyer
+    fills ``vat_id``, one below the registration threshold fills
+    ``tax_registration_id`` (rendered with the ``!VAT`` marker), and some carry
+    only ``legal_registration_id``. Each shape appears in a real archive.
+    """
+    bare = cif.removeprefix("RO")
+    field = {"vat_id": cif, "tax_registration_id": bare, "legal_registration_id": bare}
+    return Party(
+        name="Client SRL", address=_ADDRESS, **{identified_by: field[identified_by]}
+    )
+
+
 def _invoice_xml(
     *,
     number: str = "1882",
     seller_cif: str = "RO222",
     buyer_cif: str = "RO111",
+    buyer_identified_by: str = "vat_id",
     seller_name: str = "Miele Appliances S.R.L.",
     issue_date: dt.date = dt.date(2026, 6, 17),
     unit_price: str = "728.51",
@@ -52,7 +69,7 @@ def _invoice_xml(
         due_date=issue_date + dt.timedelta(days=30),
         currency="RON",
         seller=Seller(name=seller_name, vat_id=seller_cif, address=_ADDRESS),
-        buyer=Party(name="Client SRL", vat_id=buyer_cif, address=_ADDRESS),
+        buyer=_buyer(buyer_cif, identified_by=buyer_identified_by),
         lines=[
             InvoiceLine(
                 name="Consultanta",
@@ -65,24 +82,6 @@ def _invoice_xml(
         ],
     )
     return render_invoice(document)
-
-
-def _buyer_not_vat_registered(xml: bytes) -> bytes:
-    """Rewrite the buyer as a non-VAT-registered party, as production files it.
-
-    A Romanian entity without a VAT number files its CIF under
-    ``PartyTaxScheme/CompanyID`` with the ``!VAT`` scheme marker and no ``RO``
-    prefix. anafpy's flat view exposes that only for the *seller*
-    (``Seller.tax_registration_id``); on the buyer it vanishes, so nothing but
-    the raw document can tell whose invoice this is. Observed on 6 of 9 real
-    invoices — every fixture built by the authoring package is VAT-registered,
-    which is exactly how this went unnoticed.
-    """
-    text = xml.decode()
-    start = text.index("<ns1:AccountingCustomerParty")
-    end = text.index("</ns1:AccountingCustomerParty>")
-    buyer = text[start:end].replace(">RO111<", ">111<").replace(">VAT<", ">!VAT<")
-    return (text[:start] + buyer + text[end:]).encode()
 
 
 def _write_zip(base: Path, xml: bytes, *, stem: str = "6389056244") -> Path:
@@ -144,14 +143,19 @@ def test_direction_comes_from_the_document_not_a_listing(tmp_path: Path) -> None
     assert entry.partner_cif == "999"  # the partner is the *other* party
 
 
-def test_non_vat_registered_buyer_is_still_ours(tmp_path: Path) -> None:
-    """The common Romanian case: our CIF exists only in the raw UBL.
+@pytest.mark.parametrize(
+    "identified_by", ["vat_id", "tax_registration_id", "legal_registration_id"]
+)
+def test_buyer_is_recognised_however_it_is_identified(
+    tmp_path: Path, identified_by: str
+) -> None:
+    """All three homes BR-RO-120 allows, all three seen in one real archive.
 
-    Reading the flat view alone would file this as someone else's invoice and
-    silently drop it from the catalog.
+    Matching on ``vat_id`` alone files a buyer below the VAT-registration
+    threshold as someone else's invoice — 6 of 9 real ones, silently dropped.
     """
     legacy = tmp_path / "vechi"
-    _write_zip(legacy / "primita", _buyer_not_vat_registered(_invoice_xml()))
+    _write_zip(legacy / "primita", _invoice_xml(buyer_identified_by=identified_by))
     state = Archive.open(tmp_path / "state.db")
 
     report = run_backfill(legacy, _config(tmp_path), state)
