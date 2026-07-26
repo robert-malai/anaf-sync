@@ -90,7 +90,7 @@ if sys.platform == "darwin":
         info_plist={
             # Menu-bar-only: no Dock icon, no app-switcher entry.
             "LSUIElement": True,
-            "CFBundleShortVersionString": "0.1.3",
+            "CFBundleShortVersionString": "0.3.1",
             "NSHighResolutionCapable": True,
         },
     )
