@@ -15,7 +15,7 @@ from anafpy.efactura import (
 )
 from anafpy.efactura.authoring import DocumentKind, InvoiceDocument
 from anafpy.exceptions import AnafError
-from anafpy.public import TransformStandard
+from anafpy.public import PublicClient, TransformStandard
 
 from anaf_sync.config import Artifact, OutputConfig, SyncConfig
 from anaf_sync.engine import SyncReport, _sync_cif, _transform_standard
@@ -269,6 +269,56 @@ async def test_state_records_only_artifacts_actually_written(tmp_path: Path) -> 
 
     row = _row(tmp_path / "state.db", "m1")
     assert row["artifacts"] == '["zip", "xml", "metadata"]'  # no signature member
+
+
+class RefusingPublicClient:
+    """ANAF's transformare refusing to render — HTTP 200, JSON instead of PDF.
+
+    The documented failure shape (see anafpy's ``render_invoice_pdf``), and the
+    one a ``pdf``-only archive has no second artifact to fall back on.
+    """
+
+    async def render_invoice_pdf(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+        validate: bool = True,
+    ) -> bytes:
+        return b'{"eroare":"Nu s-a putut transforma documentul"}'
+
+
+async def test_message_with_no_artifact_written_is_a_failure(tmp_path: Path) -> None:
+    """A message that lands nothing on disk must never be marked archived.
+
+    The dedupe gate is permanent, so recording it would lose the invoice for
+    good once ANAF's 60-day window closes — silently, with an `ok` exit code.
+    """
+    config = _config(tmp_path)
+    config.output.artifacts = [Artifact.PDF]  # the only artifact that can decline
+    state = Archive.open(tmp_path / "state.db")
+
+    report = SyncReport()
+    await _sync_cif(
+        cast(EFacturaClient, FakeClient(_items())),
+        cast(PublicClient, RefusingPublicClient()),
+        config,
+        state,
+        PathTemplate(config.output.template),
+        report,
+        cif="111",
+        days=60,
+        dry_run=False,
+        redownload=False,
+    )
+
+    assert report.downloaded == 0
+    assert not report.ok  # the run exits non-zero instead of claiming success
+    assert report.failures[0][0] == "m1"
+    assert "no artifact could be written" in report.failures[0][1]
+    assert "pdf" in report.failures[0][1]  # names what was configured
+    assert not state.is_archived("m1")  # retried next run, not lost
+    assert state.failures["m1"].attempts == 1
 
 
 async def test_catalog_fields_land_in_the_db(tmp_path: Path) -> None:

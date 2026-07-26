@@ -158,6 +158,20 @@ async def _sync_cif(
             report.failures.append((message_id, str(exc)))
             state.record_failure(message_id, str(exc))  # visibility only, no gate
             continue
+        if not entry.artifacts:
+            # Nothing reached the disk — every configured artifact declined this
+            # message (a pdf-only archive whose render ANAF refused, say).
+            # Recording it would mark the message archived *forever*: the dedupe
+            # gate never forgets, and past ANAF's 60-day window the message can
+            # never be listed again, so the invoice would be lost with an `ok`
+            # exit code. Report it instead, and let the next run retry while the
+            # window is still open.
+            configured = ", ".join(a.value for a in config.output.artifacts)
+            reason = f"no artifact could be written (configured: {configured})"
+            log.error("nothing_written", message_id=message_id, error=reason)
+            report.failures.append((message_id, reason))
+            state.record_failure(message_id, reason)
+            continue
         # record() commits one transaction: a crash never redoes or loses work.
         state.record(entry)
         report.downloaded += 1
@@ -200,6 +214,10 @@ async def _archive_message(
     The entry describes what is on disk (the base path, the artifact values
     actually written), not what was configured, plus the best-effort catalog
     fields projected from the message and its view.
+
+    ``entry.artifacts`` can come back empty — every configured artifact is
+    allowed to decline a message. That is not an archived message, and the
+    caller must not record it; see :func:`_sync_cif`.
     """
     assert item.id is not None
     direction = direction_of(item)

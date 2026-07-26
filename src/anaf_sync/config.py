@@ -253,6 +253,12 @@ template = "{_DEFAULT_TEMPLATE}"
 # What to save per invoice: "zip" (raw signed archive), "xml" (invoice UBL),
 # "signature" (detached MF signature), "pdf" (ANAF's rendering), "metadata"
 # (JSON sidecar with the message details).
+#
+# Keep "zip" unless you have a reason not to. It is the signed original ANAF
+# hands over, and every other artifact derives from it: the XML and the
+# signature are its members, and the PDF is a rendering of the XML. The reverse
+# does not hold — a PDF-only archive cannot be turned back into any of the
+# others, and ANAF will not re-issue the invoice past 60 days.
 artifacts = ["zip", "pdf"]
 """
 

@@ -161,6 +161,26 @@ numele lunilor sunt cu literă mică, conform normelor limbii române), iar
 foldere sortate cronologic, combină numărul și numele lunii:
 `{issue_date:%m}-{issue_month}` → `07-iulie`.
 
+### Ce se salvează pentru fiecare factură
+
+`artifacts` alege ce ajunge pe disc: `zip` (arhiva semnată, exact cum o dă
+ANAF), `xml` (UBL-ul facturii), `signature` (semnătura detașată a Ministerului
+Finanțelor), `pdf` (randarea făcută de ANAF) și `metadata` (un fișier JSON cu
+detaliile mesajului).
+
+Tentația e să păstrezi doar PDF-ul — e singurul pe care îl citești efectiv.
+Merită totuși să lași `zip`-ul în listă: el e originalul semnat, iar toate
+celelalte se obțin din el (XML-ul și semnătura sunt fișierele din interiorul
+lui, iar PDF-ul e o randare a XML-ului). Invers nu funcționează: dintr-o arhivă
+numai cu PDF-uri nu mai poți reconstitui nimic, iar ANAF nu îți mai dă factura
+după 60 de zile. Pe scurt: PDF-ul e ce citești, `zip`-ul e ce păstrezi.
+
+Dacă niciun artefact configurat nu poate fi scris pentru un mesaj — de exemplu
+o arhivă doar cu `pdf`, iar serviciul de randare al ANAF refuză documentul —
+mesajul **nu** e marcat ca arhivat: rularea îl raportează ca eșec, îl vezi în
+`anaf-sync status` și se reîncearcă automat la următoarea rulare, cât timp
+fereastra de 60 de zile e încă deschisă.
+
 ## Rulare
 
 ```bash
