@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
 
 from ..config import default_config_path, default_state_path
 from .icons import status_icon
+from .macos import activate as activate_app
+from .macos import hide_dock_icon
 from .runner import SyncRunner
 from .settings_window import SettingsWindow
 from .status import TrayStatus, load_status
@@ -250,6 +252,7 @@ class TrayApp:
                 on_retry=self._runner.start,
             )
             self._window.settings_requested.connect(self._open_settings)
+        activate_app()  # no-op off macOS; an accessory app must ask to come forward
         self._window.show()
         self._window.raise_()
         self._window.activateWindow()
@@ -263,6 +266,7 @@ class TrayApp:
             )
             # A config save refreshes the tray status (and the catalog) at once.
             self._settings.saved.connect(self.refresh)
+        activate_app()
         self._settings.open_fresh()
 
     def _open_folder(self) -> None:
@@ -314,6 +318,10 @@ def run() -> int:
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    # Menu-bar-only: the bundle gets this from LSUIElement, a pip/uv install
+    # only from here — and it must come after QApplication, whose Cocoa plugin
+    # makes the bare interpreter a foreground app (a "Python" Dock icon).
+    hide_dock_icon()
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("system tray is not available on this platform", file=sys.stderr)
 

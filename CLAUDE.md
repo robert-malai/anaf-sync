@@ -44,7 +44,7 @@ is considered done.
 | `health.py` | pure ok/warn/err derivation, purge countdown, delay rule — shared by `status` and the tray |
 | `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd; also home of the shared script-resolution/subprocess helpers |
 | `autostart.py` | login-time autostart for the tray (`anaf-sync tray install\|remove\|status`) |
-| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`icons`/`format` (pure) and `watcher`/`runner`/`store` (Qt edges) |
+| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`icons`/`format` (pure) and `watcher`/`runner`/`store` (Qt edges) and `macos` (the accessory activation policy — no Dock icon without a bundle) |
 
 ## Invariants — do not break
 
