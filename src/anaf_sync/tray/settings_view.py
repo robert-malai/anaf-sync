@@ -88,7 +88,7 @@ _HELP_MAX_WIDTH = 620
 _FORM_CHROME = 48 + _LABEL_WIDTH + 12 + 16
 
 _DIR_LABEL = "Dosar arhivă"
-_NEEDS_INIT = "Rulați `anaf-sync init` pentru a crea un config.toml."
+_NEEDS_INIT = "Rulați `anaf-sync init <CIF>` pentru a crea un config.toml."
 
 # CIF validation messages (mirrored by tests).
 CIF_INVALID = "CIF invalid — folosește doar cifre, fără prefixul RO."

@@ -200,21 +200,31 @@ def _launcher(
 
 @app.command
 def init(
+    cif: Annotated[
+        list[str],
+        Parameter(
+            # `--empty-cif` would write a config with no CIF at all — the one
+            # thing this argument exists to prevent.
+            negative_iterable="",
+            help="Company CIF(s) to archive invoices for; the RO prefix is "
+            "optional. Repeat for several firms.",
+        ),
+    ],
     *,
     config: ConfigOption = None,
     force: Annotated[
         bool, Parameter(negative="", help="Overwrite an existing config.")
     ] = False,
 ) -> int:
-    """Write a commented default configuration file."""
+    """Write a commented configuration file for one or more CIFs."""
     path = _resolve_config_path(config)
     try:
-        write_default_config(path, force=force)
-    except FileExistsError as exc:
+        write_default_config(path, cifs=cif, force=force)
+    except (FileExistsError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(f"wrote {path}")
-    print("Edit it (CIF, output folder, template), then run: anaf-sync sync")
+    print("Review it (output folder, template), then run: anaf-sync sync")
     return 0
 
 

@@ -22,7 +22,7 @@ def _no_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _view(tmp_path: Path) -> SettingsView:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     return SettingsView(state_path=tmp_path / "state.db", config_path=config)
 
 

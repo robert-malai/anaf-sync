@@ -117,17 +117,21 @@ acesta.
 ## Configurare
 
 ```bash
-anaf-sync init            # scrie un config.toml comentat
-anaf-sync status          # arată unde se află fișierul pe platforma ta
+anaf-sync init 12345678             # config.toml comentat, cu CIF-ul tău în el
+anaf-sync init 12345678 87654321    # mai multe firme deodată
+anaf-sync status                    # arată unde se află fișierul pe platforma ta
 ```
+
+CIF-ul e obligatoriu — fișierul se scrie gata configurat, nu cu un exemplu pe
+care să-l uiți neînlocuit. Prefixul `RO` e opțional (se elimină automat).
 
 Fișierul generat e comentat și acoperă toate cheile: `cif = "12345678"` (sau
 `cifs = ["...", "..."]` pentru mai multe firme), `direction` (`received`,
 `sent` sau `both`), `lookback_days` (1–60 — limita de retenție ANAF) și
 `failure_retention_days`, plus secțiunea `[output]` de mai jos. Dacă vrei
 config-ul în altă parte, `--config`/`-c` (sau variabila de mediu
-`ANAF_SYNC_CONFIG`) funcționează la orice comandă; `anaf-sync init --force`
-suprascrie un fișier existent.
+`ANAF_SYNC_CONFIG`) funcționează la orice comandă; `anaf-sync init <CIF>
+--force` suprascrie un fișier existent.
 
 Partea interesantă e șablonul de căi:
 
