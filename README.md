@@ -90,16 +90,20 @@ Secret** — „parola" aplicației; păstrează-le în siguranță.
 ### Pasul 3 — login
 
 Comanda `anafpy` e a pachetului anafpy — `uv tool install anaf-sync` nu o
-expune, deci instaleaz-o o dată, tot ca unealtă uv:
+expune. Login-ul e însă un pas pe care îl faci o singură dată, așa că cel mai
+simplu îl rulezi cu `uvx`, fără nicio instalare (token-ul se scrie oricum pe
+disc, deci rezultatul e permanent):
 
 ```bash
-uv tool install anafpy
-
 export ANAFPY_CLIENT_ID=...          # sau într-un fișier .env
 export ANAFPY_CLIENT_SECRET=...
 
-anafpy auth login --redirect-uri https://localhost:8765/callback
+uvx anafpy auth login --redirect-uri https://localhost:8765/callback
 ```
+
+Dacă vrei comanda `anafpy` permanent pe PATH — de exemplu o folosești deja
+pentru serverul MCP anafpy — instaleaz-o o dată ca unealtă uv, cu
+`uv tool install anafpy`, și apoi rulezi `anafpy auth login ...` direct.
 
 Se deschide browserul, îți alegi certificatul digital, iar ANAF
 redirecționează către callback-ul local. Pentru că ANAF acceptă doar
@@ -275,7 +279,7 @@ să șteargă mesajele după 60 de zile. Culoarea punctului de stare înseamnă:
 - **galben** — necesită atenție: o factură eșuează repetat sau a fost declarată
   cu întârziere;
 - **roșu** — sincronizarea nu funcționează (de obicei autentificarea ANAF a
-  expirat — rulează `anafpy auth login`).
+  expirat — rulează `uvx anafpy auth login`, ca la Pasul 3).
 
 Din meniu poți porni o sincronizare, deschide folderul arhivei, răsfoi facturile
 arhivate și edita configurația — fără să atingi `config.toml` manual (deși
