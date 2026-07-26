@@ -34,12 +34,21 @@ def _row(path: Path, message_id: str) -> dict[str, Any]:
     return dict(row)
 
 
+# `writestr` with a plain name stamps the entry with the current local time at
+# DOS's two-second resolution, so two calls straddling a tick return different
+# bytes — and tests that compare a written archive against a freshly built one
+# then fail whenever the run lands on the boundary. Pin the timestamp.
+_ZIP_STAMP = (2026, 1, 1, 0, 0, 0)
+
+
 def _zip_bytes(*, with_signature: bool = True) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
-        zf.writestr("4001.xml", "<NotUbl>plain</NotUbl>")
+        zf.writestr(zipfile.ZipInfo("4001.xml", _ZIP_STAMP), "<NotUbl>plain</NotUbl>")
         if with_signature:
-            zf.writestr("semnatura_4001.xml", "<Signature/>")
+            zf.writestr(
+                zipfile.ZipInfo("semnatura_4001.xml", _ZIP_STAMP), "<Signature/>"
+            )
     return buffer.getvalue()
 
 
