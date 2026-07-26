@@ -16,10 +16,26 @@ from __future__ import annotations
 import re
 import string
 from collections.abc import Mapping
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-__all__ = ["PathTemplate", "TemplateError"]
+__all__ = ["PathTemplate", "TemplateError", "artifact_path"]
+
+
+def artifact_path(base: Path, suffix: str) -> Path:
+    """``base`` with ``suffix`` **appended** — never ``Path.with_suffix``.
+
+    A rendered base routinely ends in a dot-segment: Romanian legal forms
+    (``S.R.L``, ``S.A`` — only the *trailing* dot is stripped, see
+    :data:`_TRAILING_JUNK`) and dotted invoice numbers both produce one.
+    ``with_suffix`` reads that segment as an extension and *replaces* it,
+    filing ``…_Miele Appliances S.R.L`` as ``…_Miele Appliances S.R.zip``.
+
+    Every artifact name — the engine writing them, the tray looking them up —
+    goes through here, so the two cannot drift on how a file is named.
+    """
+    return base.with_name(base.name + suffix)
+
 
 #: Characters invalid on Windows (superset of POSIX) plus control characters.
 _ILLEGAL_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')

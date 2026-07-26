@@ -34,7 +34,7 @@ from tenacity import (
 from .config import Artifact, Direction, SyncConfig
 from .context import direction_of, project_message
 from .state import Archive, CatalogEntry
-from .template import PathTemplate
+from .template import PathTemplate, artifact_path
 
 __all__ = ["SyncReport", "run_sync"]
 
@@ -258,25 +258,25 @@ async def _write_artifact(
     """Write one artifact next to ``base``; returns its path, or ``None`` when
     the message has nothing to satisfy it (e.g. no signature member)."""
     if artifact is Artifact.ZIP:
-        path = base.with_suffix(".zip")
+        path = artifact_path(base, ".zip")
         path.write_bytes(message.raw_zip)
         return path
     if artifact is Artifact.XML:
         if message.content_xml is None:
             logger.warning("no_content_xml", message_id=item.id)
             return None
-        path = base.with_suffix(".xml")
+        path = artifact_path(base, ".xml")
         path.write_bytes(message.content_xml)
         return path
     if artifact is Artifact.SIGNATURE:
         if message.signature_xml is None:
             logger.warning("no_signature_xml", message_id=item.id)
             return None
-        path = Path(f"{base}_semnatura.xml")
+        path = artifact_path(base, "_semnatura.xml")
         path.write_bytes(message.signature_xml)
         return path
     if artifact is Artifact.METADATA:
-        path = base.with_suffix(".json")
+        path = artifact_path(base, ".json")
         payload = {
             "message": item.model_dump(),
             "context": context,
@@ -317,6 +317,6 @@ async def _write_pdf(
     if not body.startswith(b"%PDF"):
         logger.warning("pdf_render_failed", message_id=item.id, body=body[:120])
         return None
-    path = base.with_suffix(".pdf")
+    path = artifact_path(base, ".pdf")
     path.write_bytes(body)
     return path

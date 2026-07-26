@@ -1,5 +1,6 @@
 """End-to-end engine pass against a fake e-Factura client."""
 
+import datetime as dt
 import io
 import sqlite3
 import zipfile
@@ -13,7 +14,7 @@ from anafpy.efactura import (
     Filter,
     MessageListItem,
 )
-from anafpy.efactura.authoring import DocumentKind, InvoiceDocument
+from anafpy.efactura.authoring import DocumentKind, InvoiceDocument, Party, Seller
 from anafpy.exceptions import AnafError
 from anafpy.public import PublicClient, TransformStandard
 
@@ -319,6 +320,50 @@ async def test_message_with_no_artifact_written_is_a_failure(tmp_path: Path) -> 
     assert "pdf" in report.failures[0][1]  # names what was configured
     assert not state.is_archived("m1")  # retried next run, not lost
     assert state.failures["m1"].attempts == 1
+
+
+async def test_dotted_partner_name_keeps_its_last_segment(tmp_path: Path) -> None:
+    """``S.R.L`` is a legal form, not a file extension.
+
+    ``template.py`` strips only the *trailing* dot, so a Romanian company
+    reaches the writer as ``… S.R.L``. ``Path.with_suffix`` would read ``.L`` as
+    an extension and replace it, filing the invoice as ``… S.R.zip`` — a letter
+    short, and no longer sharing a stem with its ``_semnatura.xml``.
+    """
+    config = _config(tmp_path)
+    config.output.template = "{cif}/{partner_name}"
+    state = Archive.open(tmp_path / "state.db")
+
+    class UblClient(FakeClient):
+        async def download(self, message_id: str) -> DownloadedMessage:
+            message = DownloadedMessage.from_zip(_zip_bytes())
+            # Pre-seed the lazily parsed view — the fake ZIP is not real UBL.
+            message.__dict__["view"] = InvoiceDocument.model_construct(
+                kind=DocumentKind.INVOICE,
+                number="1882",
+                issue_date=dt.date(2026, 6, 17),
+                currency="RON",
+                seller=Seller.model_construct(
+                    name="Miele Appliances S.R.L.", vat_id="RO222"
+                ),
+                buyer=Party.model_construct(name="Client SRL", vat_id="RO111"),
+            )
+            return message
+
+    report = await _run(UblClient(_items()), config, state)
+
+    assert report.downloaded == 1
+    folder = tmp_path / "archive" / "111"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "Miele Appliances S.R.L.json",
+        "Miele Appliances S.R.L.xml",
+        "Miele Appliances S.R.L.zip",
+        "Miele Appliances S.R.L_semnatura.xml",
+    ]
+    # The catalog's base_path is what the tray resolves files from: it must be
+    # the same base the artifacts were appended to, dots and all.
+    base_path = _row(tmp_path / "state.db", "m1")["base_path"]
+    assert base_path.endswith("111/Miele Appliances S.R.L")
 
 
 async def test_catalog_fields_land_in_the_db(tmp_path: Path) -> None:
