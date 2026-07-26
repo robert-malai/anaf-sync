@@ -13,6 +13,11 @@
 
 import sys
 
+# The version the bundle reports comes from the package it bundles — a spec is
+# executed by the build venv's Python, where `uv sync` has already installed
+# anaf_sync, so there is nothing to keep in step by hand.
+from anaf_sync import __version__
+
 block_cipher = None
 
 # Qt modules the tray never uses; excluding them trims tens of MB.
@@ -87,10 +92,11 @@ if sys.platform == "darwin":
         name="anaf-sync-tray.app",
         icon=None,
         bundle_identifier="ro.anaf-sync.tray",
+        # PyInstaller writes this into the plist as CFBundleShortVersionString.
+        version=__version__,
         info_plist={
             # Menu-bar-only: no Dock icon, no app-switcher entry.
             "LSUIElement": True,
-            "CFBundleShortVersionString": "0.3.1",
             "NSHighResolutionCapable": True,
         },
     )
