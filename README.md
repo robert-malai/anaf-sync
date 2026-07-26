@@ -7,6 +7,8 @@
     src="https://img.shields.io/codecov/c/github/robert-malai/anaf-sync?branch=main" alt="Coverage"></a>
   <a href="https://pypi.org/project/anaf-sync/"><img
     src="https://img.shields.io/pypi/v/anaf-sync" alt="PyPI version"></a>
+  <a href="https://pepy.tech/project/anaf-sync"><img
+    src="https://img.shields.io/pepy/dt/anaf-sync" alt="Downloads"></a>
   <a href="https://pypi.org/project/anaf-sync/"><img
     src="https://img.shields.io/pypi/pyversions/anaf-sync" alt="Python versions"></a>
 </p>
