@@ -1,0 +1,13 @@
+{
+  "name": "anaf-sync-setup",
+  "displayName": "anaf-sync setup",
+  "description": "Install and configure anaf-sync on this computer — the scheduled local archiver for RO e-Factura invoices. Probes what is already in place, installs what is missing, and repairs a broken setup.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Robert Malai"
+  },
+  "homepage": "https://github.com/robert-malai/anaf-sync",
+  "repository": "https://github.com/robert-malai/anaf-sync",
+  "license": "Apache-2.0",
+  "keywords": ["anaf", "e-factura", "romania", "archiver", "setup"]
+}

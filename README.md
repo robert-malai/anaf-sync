@@ -38,6 +38,22 @@ Ai nevoie de [uv](https://docs.astral.sh/uv/), care își instalează singur
 Python-ul potrivit. Ce s-a schimbat la fiecare versiune găsești în
 [Releases](https://github.com/robert-malai/anaf-sync/releases).
 
+### Instalare asistată, cu Claude
+
+Dacă folosești [Claude Code](https://claude.com/claude-code), un skill de
+instalare parcurge tot ce urmează în acest ghid — instalare, autentificare,
+configurare, prima sincronizare și programarea — pas cu pas, pe calculatorul
+tău:
+
+```
+/plugin marketplace add robert-malai/anafpy
+/plugin install anaf-sync-setup@anafpy
+```
+
+apoi cere pur și simplu „instalează anaf-sync". Skill-ul e sigur de re-rulat
+oricând — de exemplu când sincronizarea s-a stricat sau a expirat login-ul
+anual ANAF.
+
 ## Autentificare
 
 anaf-sync nu are un sistem propriu de credențiale: refolosește autentificarea
