@@ -89,7 +89,12 @@ Secret** — „parola" aplicației; păstrează-le în siguranță.
 
 ### Pasul 3 — login
 
+Comanda `anafpy` e a pachetului anafpy — `uv tool install anaf-sync` nu o
+expune, deci instaleaz-o o dată, tot ca unealtă uv:
+
 ```bash
+uv tool install anafpy
+
 export ANAFPY_CLIENT_ID=...          # sau într-un fișier .env
 export ANAFPY_CLIENT_SECRET=...
 
