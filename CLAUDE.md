@@ -84,6 +84,38 @@ is considered done.
 - anafpy's API is best learned from the installed source under
   `.venv/lib/python3.12/site-packages/anafpy/` — its docstrings are the spec.
 
+## Releases
+
+A `v*` tag drives everything: `release.yml` re-runs the gates, checks the tag
+against `pyproject.toml`'s version, publishes to PyPI via trusted publishing
+(OIDC, no stored token), and only then creates the GitHub release with the
+sdist, the wheel, and the three tray bundles attached. PyPI first, deliberately
+— the release is the announcement, so it must never point at a version
+`pip install` cannot reach yet. `release-tray.yml` is a **reusable** workflow
+(`workflow_call` + `workflow_dispatch`) that only builds and uploads bundles;
+it must never create or edit a release, or two jobs race for the same one.
+
+Cutting a release — the release commit carries both, then the tag:
+
+1. Bump `version` in `pyproject.toml`.
+2. **Write `release-notes/<tag>.md`** (e.g. `release-notes/v0.3.0.md`) — every
+   tag has one; `release-notes/` holds all of them, backfilled to v0.1.0.
+3. Commit as `Release X.Y.Z`, then push the `v*` tag.
+
+**Release notes are written, not generated.** The file's first line is an H1
+that becomes the GitHub release title (`# anaf-sync 0.3.0 — <the hook>`); the
+rest is the body, prose in the voice of the existing files — what changed and
+why it matters to a user, plus an explicit warning when something ships
+unverified. Never hand-write the compare link; `release.yml` derives and
+appends it. A tag with no such file still gets a release, carrying GitHub's
+generated commit list — the fallback, not the intent. PyPI has no notes field:
+the `Changelog` project URL points every version's project page at the
+releases, so the prose keeps one home.
+
+Release notes are the one place the English-only rule bends: they are the
+operator-facing announcement, so a Romanian lead line is fine when the release
+is one operators act on (see `release-notes/v0.2.1.md`).
+
 ## Conventions
 
 Robert's standard Python stack applies (see the `python-conventions` skill):

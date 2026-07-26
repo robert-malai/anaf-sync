@@ -270,6 +270,25 @@ Mirrors anafpy's hybrid model:
 - **No archive verification command.** `anaf-sync verify` (re-hash artifacts
   against state, validate MF signatures via `validate_signature`) is a
   natural extension.
+- **The GitHub release is automated, its prose is not** (2026-07-26). A `v*`
+  tag creates the release itself, downstream of the PyPI publish job — the
+  release is the announcement, so it must never point at a version
+  `pip install` cannot yet reach. The body comes from `release-notes/<tag>.md`
+  committed with the release: through v0.2.3 those notes were written by hand
+  after the fact (and four tags never got a release at all, because the only
+  job creating one was the bundle upload, which has no notes to give), so the
+  automation moves the *creation* into CI and leaves the *writing* where it
+  was. GitHub's generated notes remain the fallback when a tag ships no such
+  file, so a release always exists for a published version. The v0.1.0–v0.2.3
+  notes were **backfilled into `release-notes/`** — from the published bodies
+  where there was one, from the commit history where there was not — so the
+  directory, not the GitHub API, is now the corpus. Consequence for the tray:
+  `release-tray.yml` became a reusable workflow that only uploads artifacts,
+  and `release.yml` attaches them; two workflows racing to create the same
+  release is what produced v0.2.3's empty body. Notes are **not** duplicated
+  into the packaged README for PyPI's sake (PyPI has no notes field, and the
+  shipped README would then drift from the repo's): a `Changelog` project URL
+  points every version's project page at the releases.
 
 ## 10. The desktop companion
 
@@ -475,7 +494,10 @@ conditionals) freezes the app into a menu-bar-only macOS `.app` (`LSUIElement`,
 so no Dock icon), a windowed Windows exe, and a Linux one-dir binary, excluding
 the Qt modules the tray never touches to keep the size down. `release-tray.yml`
 runs the full gates with the `tray` extra (the PySide6 code exercised headless
-via `QT_QPA_PLATFORM=offscreen`) before building on each OS. Code signing and
+via `QT_QPA_PLATFORM=offscreen`) before building on each OS; it is a reusable
+workflow that `release.yml` calls on a `v*` tag and that can also be dispatched
+by hand to check the freeze still works (§9 — it uploads artifacts and never
+touches the release itself). Code signing and
 notarization are deliberately out of scope for now — the bundles are unsigned
 and trigger the usual first-run OS warnings, documented in the README with the
 right-click-open workaround; signing is follow-up work before the bundles are

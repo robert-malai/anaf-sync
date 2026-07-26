@@ -41,6 +41,10 @@ tray = [
 
 [project.urls]
 Homepage = "https://github.com/robert-malai/anaf-sync"
+# PyPI has no notes field, so every version's project page links out to the
+# releases — the one home for the release prose (see release-notes/).
+Changelog = "https://github.com/robert-malai/anaf-sync/releases"
+Issues = "https://github.com/robert-malai/anaf-sync/issues"
 
 [project.scripts]
 anaf-sync = "anaf_sync.cli:main"

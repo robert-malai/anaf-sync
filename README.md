@@ -33,7 +33,8 @@ uv tool install --from . anaf-sync
 ```
 
 Ai nevoie de [uv](https://docs.astral.sh/uv/), care își instalează singur
-Python-ul potrivit.
+Python-ul potrivit. Ce s-a schimbat la fiecare versiune găsești în
+[Releases](https://github.com/robert-malai/anaf-sync/releases).
 
 ## Autentificare
 
@@ -213,8 +214,9 @@ anaf-sync tray status
 anaf-sync tray remove
 ```
 
-Alternativ, descarcă un pachet gata compilat de la secțiunea Releases (nu
-necesită Python). Pachetele nu sunt semnate deocamdată, așa că la prima
+Alternativ, descarcă un pachet gata compilat de la
+[secțiunea Releases](https://github.com/robert-malai/anaf-sync/releases/latest)
+(nu necesită Python). Pachetele nu sunt semnate deocamdată, așa că la prima
 pornire sistemul afișează un avertisment: pe macOS deschide-l cu click‑dreapta
 → „Open" o singură dată; pe Windows alege „More info" → „Run anyway".
 

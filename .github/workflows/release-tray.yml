@@ -1,8 +1,12 @@
 # Build the desktop tray companion into standalone bundles for each OS.
 #
 # Runs the full gates with the `tray` extra (so the PySide6 UI is exercised
-# headless), then freezes the app with PyInstaller and uploads the result. On a
-# version tag the zipped bundles are attached to the GitHub release.
+# headless), then freezes the app with PyInstaller and uploads the result as a
+# per-OS artifact. Attaching those artifacts to a release is NOT done here:
+# `release.yml` calls this workflow on a `v*` tag and does the attaching in one
+# place, downstream of PyPI, so there is exactly one job that creates a release
+# and it can carry the written notes. Run it on its own (workflow_dispatch) to
+# check that the bundles still build.
 #
 # Known gap (out of scope): the bundles are UNSIGNED — no macOS notarization,
 # no Windows Authenticode. Operators must use the documented right-click-open
@@ -11,12 +15,11 @@
 name: release-tray
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
-  contents: write # attach bundles to the GitHub release on a tag
+  contents: read
 
 jobs:
   bundle:
@@ -61,17 +64,12 @@ jobs:
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist/anaf-sync-tray -DestinationPath dist/anaf-sync-tray-windows.zip
+      # `release.yml` collects these with pattern `anaf-sync-tray-*` — keep the
+      # prefix if the name changes.
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
           name: anaf-sync-tray-${{ runner.os }}
           path: |
-            dist/*.zip
-            dist/*.tar.gz
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
             dist/*.zip
             dist/*.tar.gz
