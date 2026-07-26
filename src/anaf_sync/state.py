@@ -37,7 +37,7 @@ from pydantic import BaseModel
 
 __all__ = ["Archive", "CatalogEntry", "FailureRecord", "RunRecord"]
 
-_SCHEMA_VERSION = "2"
+_SCHEMA_VERSION = "3"
 
 _SCHEMA = f"""
 CREATE TABLE messages (
@@ -54,7 +54,8 @@ CREATE TABLE messages (
     total        REAL,
     currency     TEXT,
     message_type TEXT,
-    created_at   TEXT
+    created_at   TEXT,
+    source       TEXT NOT NULL DEFAULT 'sync'
 );
 CREATE INDEX idx_messages_issue_date ON messages(issue_date);
 CREATE INDEX idx_messages_partner    ON messages(partner_name);
@@ -91,6 +92,11 @@ class CatalogEntry(BaseModel):
     #: ANAF's ``data_creare`` (when the message entered SPV), parsed by
     #: ``context._parse_created``. Nullable; needed by the delayed-invoice check.
     created_at: dt.datetime | None = None
+    #: How the row got here. ``"backfill"`` rows were read off disk, not
+    #: downloaded: their ``message_id`` is synthetic and ``created_at`` is
+    #: always ``None``, so a reader must not take "no delay" from it — see
+    #: ``health.is_delayed``, which cannot tell absent from on-time.
+    source: Literal["sync", "backfill"] = "sync"
 
 
 class RunRecord(BaseModel):
@@ -229,8 +235,8 @@ class Archive:
                 INSERT INTO messages (
                     message_id, cif, direction, saved_at, base_path, artifacts,
                     issue_date, number, partner_name, partner_cif, total,
-                    currency, message_type, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    currency, message_type, created_at, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(message_id) DO UPDATE SET
                     cif          = excluded.cif,
                     direction    = excluded.direction,
@@ -244,7 +250,8 @@ class Archive:
                     total        = excluded.total,
                     currency     = excluded.currency,
                     message_type = excluded.message_type,
-                    created_at   = excluded.created_at
+                    created_at   = excluded.created_at,
+                    source       = excluded.source
                 """,
                 (
                     entry.message_id,
@@ -261,6 +268,7 @@ class Archive:
                     entry.currency,
                     entry.message_type,
                     entry.created_at.isoformat() if entry.created_at else None,
+                    entry.source,
                 ),
             )
             self._conn.execute(
@@ -413,10 +421,14 @@ class Archive:
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
         found = row["value"] if row is not None else None
-        if found == _SCHEMA_VERSION:
-            return
+        # Applied in sequence, so a v1 archive reaches v3 in one open.
         if found == "1":
             self._migrate_v1_to_v2()
+            found = "2"
+        if found == "2":
+            self._migrate_v2_to_v3()
+            found = "3"
+        if found == _SCHEMA_VERSION:
             return
         raise ValueError(
             f"archive at {self._path} has schema version {found!r}, "
@@ -433,6 +445,21 @@ class Archive:
             self._conn.execute("ALTER TABLE messages ADD COLUMN created_at TEXT")
             self._conn.execute(
                 "UPDATE meta SET value = '2' WHERE key = 'schema_version'"
+            )
+
+    def _migrate_v2_to_v3(self) -> None:
+        """Add ``source``; every existing row is by definition a synced one.
+
+        ``NOT NULL DEFAULT 'sync'`` backfills them in the ``ALTER`` itself, so
+        the column can be read unconditionally — no ``NULL`` tier meaning
+        "written before we tracked this".
+        """
+        with self._conn:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN source TEXT NOT NULL DEFAULT 'sync'"
+            )
+            self._conn.execute(
+                "UPDATE meta SET value = '3' WHERE key = 'schema_version'"
             )
 
     def _prune_failures(self, max_age: dt.timedelta) -> None:
@@ -469,4 +496,5 @@ def _entry_from_row(row: sqlite3.Row) -> CatalogEntry:
         created_at=(
             dt.datetime.fromisoformat(row["created_at"]) if row["created_at"] else None
         ),
+        source=row["source"],
     )

@@ -29,7 +29,7 @@ def _form_from(path: Path, **overrides: object) -> SettingsForm:
 
 def test_changing_one_key_leaves_the_rest_byte_for_byte(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
-    write_default_config(path)
+    write_default_config(path, cifs=["12345678"])
     original = path.read_text(encoding="utf-8")
 
     doc = config_io.load(path)
@@ -43,7 +43,7 @@ def test_changing_one_key_leaves_the_rest_byte_for_byte(tmp_path: Path) -> None:
 
 def test_comments_survive_and_config_still_loads(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
-    write_default_config(path)
+    write_default_config(path, cifs=["12345678"])
 
     doc = config_io.load(path)
     config_io.apply(doc, _form_from(path, lookback_days=30))
@@ -57,7 +57,7 @@ def test_comments_survive_and_config_still_loads(tmp_path: Path) -> None:
 
 def test_single_cif_switches_to_list_when_multiple(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
-    write_default_config(path)
+    write_default_config(path, cifs=["12345678"])
 
     doc = config_io.load(path)
     config_io.apply(doc, _form_from(path, cifs=["12345678", "87654321"]))
@@ -71,7 +71,7 @@ def test_single_cif_switches_to_list_when_multiple(tmp_path: Path) -> None:
 
 def test_artifacts_and_template_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
-    write_default_config(path)
+    write_default_config(path, cifs=["12345678"])
 
     doc = config_io.load(path)
     config_io.apply(
@@ -89,7 +89,7 @@ def test_artifacts_and_template_round_trip(tmp_path: Path) -> None:
 
 def test_validate_rejects_empty_cifs_without_touching_the_file(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
-    write_default_config(path)
+    write_default_config(path, cifs=["12345678"])
     before = path.read_text(encoding="utf-8")
 
     doc = config_io.load(path)

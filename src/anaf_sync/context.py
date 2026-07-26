@@ -1,22 +1,35 @@
 """Build the template context for one downloaded e-Factura message.
 
 Every variable the path template may reference is assembled here, from two
-sources: the message-list entry (always present) and the parsed invoice view
-(present when the downloaded content is a readable UBL invoice/credit note).
-Missing values stay ``None`` — the template renders them as ``unknown``.
+sources: the message-list entry and the parsed invoice view (present when the
+content is a readable UBL invoice/credit note). Missing values stay ``None`` —
+the template renders them as ``unknown``.
+
+The listing entry is *usually* present but not always: ``backfill`` reads
+documents straight off disk, long after ANAF stopped listing them. Those go
+through :func:`project_document`, which shares this module's single parse so a
+backfilled row and a synced one can never disagree on how a field is derived.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
 from anafpy.efactura import MessageListItem
-from anafpy.efactura.authoring import InvoiceDocument
+from anafpy.efactura.authoring import InvoiceDocument, Party
 
-__all__ = ["DirectionLabel", "Projection", "direction_of", "project_message"]
+__all__ = [
+    "DirectionLabel",
+    "Projection",
+    "direction_of",
+    "own_side",
+    "project_document",
+    "project_message",
+]
 
 #: "received" | "sent" — narrow alias for readability. Deliberately not the
 #: config.Direction enum: that one is the *filter* the user configures (and
@@ -101,7 +114,54 @@ class _Invoice:
     partner_cif: str | None
 
 
-def _project(item: MessageListItem, view: InvoiceDocument | None) -> _Invoice:
+def _party_identifiers(party: Party) -> set[str]:
+    """Every CIF-shaped identifier a party carries.
+
+    CIUS-RO's BR-RO-120 identifies a party by the legal-entity ``CompanyID``
+    *or any* ``PartyTaxScheme/CompanyID`` — no VAT-scheme filter — so all four
+    homes are in play, and production invoices genuinely use different ones: a
+    VAT-registered party fills ``vat_id``, one below the registration threshold
+    fills ``tax_registration_id`` (marked ``!VAT``), and plenty carry only
+    ``legal_registration_id``. ``_digits`` drops whatever is not a CIF at all,
+    such as a trade-registry number (``F35/2068/2013``) filed as the legal id.
+    """
+    candidates = [
+        party.vat_id,
+        party.tax_registration_id,
+        party.legal_registration_id,
+        *(identifier.id for identifier in party.identifiers),
+    ]
+    return {digits for value in candidates if (digits := _digits(value))}
+
+
+def own_side(
+    view: InvoiceDocument, cifs: Iterable[str]
+) -> tuple[DirectionLabel, str] | None:
+    """Classify a document by which side of it the operator is on.
+
+    Returns ``(direction, own_cif)``, or ``None`` when neither party is one of
+    ``cifs`` — a document that is not this archive's to catalog.
+
+    :func:`direction_of` reads the listing's ``tip``; a document read off disk
+    has no listing entry, so its own parties are the only evidence — and the
+    better one, since ``tip`` is prose and a CIF is a CIF. Self-billing (the
+    same CIF on both sides) classifies as ``sent``, matching the direction the
+    document was filed under.
+    """
+    own = {digits for cif in cifs if (digits := _digits(cif))}
+    if seller := _party_identifiers(view.seller) & own:
+        return "sent", next(iter(seller))
+    if buyer := _party_identifiers(view.buyer) & own:
+        return "received", next(iter(buyer))
+    return None
+
+
+def _project(
+    item: MessageListItem | None,
+    view: InvoiceDocument | None,
+    *,
+    direction: DirectionLabel | None,
+) -> _Invoice:
     number: str | None = None
     issue_date: dt.date | None = None
     due_date: dt.date | None = None
@@ -121,19 +181,24 @@ def _project(item: MessageListItem, view: InvoiceDocument | None) -> _Invoice:
         kind = view.kind.value
         seller_name = view.seller.name
         seller_cif = _party_cif(
-            view.seller.vat_id, view.seller.tax_registration_id, item.sender_cif
+            view.seller.vat_id,
+            view.seller.tax_registration_id,
+            item.sender_cif if item is not None else None,
         )
         buyer_name = view.buyer.name
-        buyer_cif = _party_cif(view.buyer.vat_id, item.receiver_cif)
+        buyer_cif = _party_cif(
+            view.buyer.vat_id, item.receiver_cif if item is not None else None
+        )
         try:
             total = view.effective_totals().payable
         except Exception:  # totals are auxiliary context — never fail the archive
             total = None
-    else:
+    elif item is not None:
         seller_cif = _digits(item.sender_cif)
         buyer_cif = _digits(item.receiver_cif)
+    # Neither a view nor a listing entry leaves every field None; backfill
+    # rejects unreadable documents before they reach here.
 
-    direction = direction_of(item)
     if direction == "sent":
         partner_name, partner_cif = buyer_name, buyer_cif
     else:
@@ -190,12 +255,38 @@ def project_message(
         view: the parsed flat invoice, when the content was readable UBL.
         cif: the CIF this sync run queried (the "own" company).
     """
-    inv = _project(item, view)
-    created = _parse_created(item.created_at)
+    return _assemble(_project(item, view, direction=direction_of(item)), item, cif=cif)
+
+
+def project_document(
+    view: InvoiceDocument,
+    *,
+    cif: str,
+    direction: DirectionLabel,
+) -> Projection:
+    """Project a document read off disk — no listing entry behind it.
+
+    The backfill counterpart to :func:`project_message`, sharing its parse so
+    an imported row and a synced one derive every field identically. What ANAF's
+    listing alone carries is unrecoverable and stays ``None``: ``message_id``,
+    ``request_id``, ``message_type``, and ``created`` (``data_creare``, which is
+    the SPV indexing time and lives nowhere in the document).
+
+    Args:
+        view: the parsed flat invoice — required here, unlike the message path.
+        cif: the operator's own CIF for this document (see :func:`own_side`).
+        direction: which side of it the operator is on (see :func:`own_side`).
+    """
+    return _assemble(_project(None, view, direction=direction), None, cif=cif)
+
+
+def _assemble(inv: _Invoice, item: MessageListItem | None, *, cif: str) -> Projection:
+    """Lay one projected invoice out as template context + catalog columns."""
+    created = _parse_created(item.created_at) if item is not None else None
     context = {
-        "message_id": item.id,
-        "request_id": item.request_id,
-        "message_type": item.message_type,
+        "message_id": item.id if item is not None else None,
+        "request_id": item.request_id if item is not None else None,
+        "message_type": item.message_type if item is not None else None,
         "created": created,
         "created_month": _ro_month(created),
         "cif": _digits(cif) or cif,
@@ -216,7 +307,7 @@ def project_message(
         "partner_cif": inv.partner_cif,
         "total": float(inv.total) if inv.total is not None else None,
         "currency": inv.currency,
-        "message_type": item.message_type,
+        "message_type": item.message_type if item is not None else None,
         "created_at": created,
     }
     return Projection(context=context, catalog=catalog)

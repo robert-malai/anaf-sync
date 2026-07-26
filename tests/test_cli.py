@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from anaf_sync import cli
-from anaf_sync.config import write_default_config
+from anaf_sync.config import load_config, write_default_config
 from anaf_sync.engine import SyncReport
 from anaf_sync.state import Archive
 
@@ -33,6 +33,42 @@ def _fake_sync(report: SyncReport) -> object:
 
 def _last_run(tmp_path: Path) -> object:
     return Archive.open_readonly(tmp_path / "state.db").last_run()
+
+
+def test_init_bakes_the_cif_into_the_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "config.toml"
+
+    assert cli.init(["RO12345678"], config=path) == 0
+
+    assert load_config(path).cifs == ["12345678"]
+    assert str(path) in capsys.readouterr().out
+
+
+def test_init_rejects_a_bad_cif(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "config.toml"
+
+    assert cli.init(["not-a-cif"], config=path) == 1
+
+    assert "not numeric" in capsys.readouterr().err
+    assert not path.exists()
+
+
+def test_init_refuses_to_overwrite_without_force(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "config.toml"
+    assert cli.init(["12345678"], config=path) == 0
+
+    assert cli.init(["87654321"], config=path) == 1
+    assert "--force" in capsys.readouterr().err
+    assert load_config(path).cifs == ["12345678"]  # left untouched
+
+    assert cli.init(["87654321"], config=path, force=True) == 0
+    assert load_config(path).cifs == ["87654321"]
 
 
 def test_status_survives_a_corrupt_config(
@@ -66,7 +102,7 @@ async def test_sync_records_ok_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     monkeypatch.setattr(
         cli.AuthSettings, "from_env", staticmethod(lambda: _DummyAuth())
     )
@@ -87,7 +123,7 @@ async def test_sync_records_failed_run_on_message_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     monkeypatch.setattr(
         cli.AuthSettings, "from_env", staticmethod(lambda: _DummyAuth())
     )
@@ -108,7 +144,7 @@ async def test_dry_run_records_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     monkeypatch.setattr(
         cli.AuthSettings, "from_env", staticmethod(lambda: _DummyAuth())
     )

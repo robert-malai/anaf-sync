@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from ..health import DELAY_THRESHOLD_DAYS, is_delayed, upload_delay_days
 from ..state import CatalogEntry
+from ..template import artifact_path as _artifact_path
 from . import format as fmt
 from .flowgrid import clear_layout
 from .models import FailureRow
@@ -39,11 +40,12 @@ _FILE_MISSING_TOOLTIP = "fișierul nu a fost găsit pe disc"
 def artifact_path(base_path: str, extension: str) -> Path:
     """The on-disk path of one artifact, matching how the engine names them.
 
-    The engine writes each artifact as ``base.with_suffix(ext)``; reproducing
-    the exact operation here keeps the two in step even when the base name
-    itself contains dots (e.g. ``ACME S.R.L.``).
+    Thin ``str``-taking wrapper over :func:`anaf_sync.template.artifact_path`
+    (``CatalogEntry.base_path`` is stored as text). Sharing the engine's own
+    helper — rather than re-deriving the naming here — is what keeps a dotted
+    base like ``ACME S.R.L`` resolving to the same file in both.
     """
-    return Path(base_path).with_suffix(extension)
+    return _artifact_path(Path(base_path), extension)
 
 
 class DetailsPane(QWidget):

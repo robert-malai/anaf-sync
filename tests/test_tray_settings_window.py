@@ -33,7 +33,7 @@ def _no_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
 def _window(tmp_path: Path) -> SettingsWindow:
     config = tmp_path / "config.toml"
     if not config.exists():  # a second window over the same config, by design
-        write_default_config(config)
+        write_default_config(config, cifs=["12345678"])
     return SettingsWindow(state_path=tmp_path / "state.db", config_path=config)
 
 

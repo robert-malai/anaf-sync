@@ -1,5 +1,6 @@
 """End-to-end engine pass against a fake e-Factura client."""
 
+import datetime as dt
 import io
 import sqlite3
 import zipfile
@@ -13,9 +14,9 @@ from anafpy.efactura import (
     Filter,
     MessageListItem,
 )
-from anafpy.efactura.authoring import DocumentKind, InvoiceDocument
+from anafpy.efactura.authoring import DocumentKind, InvoiceDocument, Party, Seller
 from anafpy.exceptions import AnafError
-from anafpy.public import TransformStandard
+from anafpy.public import PublicClient, TransformStandard
 
 from anaf_sync.config import Artifact, OutputConfig, SyncConfig
 from anaf_sync.engine import SyncReport, _sync_cif, _transform_standard
@@ -269,6 +270,100 @@ async def test_state_records_only_artifacts_actually_written(tmp_path: Path) -> 
 
     row = _row(tmp_path / "state.db", "m1")
     assert row["artifacts"] == '["zip", "xml", "metadata"]'  # no signature member
+
+
+class RefusingPublicClient:
+    """ANAF's transformare refusing to render — HTTP 200, JSON instead of PDF.
+
+    The documented failure shape (see anafpy's ``render_invoice_pdf``), and the
+    one a ``pdf``-only archive has no second artifact to fall back on.
+    """
+
+    async def render_invoice_pdf(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+        validate: bool = True,
+    ) -> bytes:
+        return b'{"eroare":"Nu s-a putut transforma documentul"}'
+
+
+async def test_message_with_no_artifact_written_is_a_failure(tmp_path: Path) -> None:
+    """A message that lands nothing on disk must never be marked archived.
+
+    The dedupe gate is permanent, so recording it would lose the invoice for
+    good once ANAF's 60-day window closes — silently, with an `ok` exit code.
+    """
+    config = _config(tmp_path)
+    config.output.artifacts = [Artifact.PDF]  # the only artifact that can decline
+    state = Archive.open(tmp_path / "state.db")
+
+    report = SyncReport()
+    await _sync_cif(
+        cast(EFacturaClient, FakeClient(_items())),
+        cast(PublicClient, RefusingPublicClient()),
+        config,
+        state,
+        PathTemplate(config.output.template),
+        report,
+        cif="111",
+        days=60,
+        dry_run=False,
+        redownload=False,
+    )
+
+    assert report.downloaded == 0
+    assert not report.ok  # the run exits non-zero instead of claiming success
+    assert report.failures[0][0] == "m1"
+    assert "no artifact could be written" in report.failures[0][1]
+    assert "pdf" in report.failures[0][1]  # names what was configured
+    assert not state.is_archived("m1")  # retried next run, not lost
+    assert state.failures["m1"].attempts == 1
+
+
+async def test_dotted_partner_name_keeps_its_last_segment(tmp_path: Path) -> None:
+    """``S.R.L`` is a legal form, not a file extension.
+
+    ``template.py`` strips only the *trailing* dot, so a Romanian company
+    reaches the writer as ``… S.R.L``. ``Path.with_suffix`` would read ``.L`` as
+    an extension and replace it, filing the invoice as ``… S.R.zip`` — a letter
+    short, and no longer sharing a stem with its ``_semnatura.xml``.
+    """
+    config = _config(tmp_path)
+    config.output.template = "{cif}/{partner_name}"
+    state = Archive.open(tmp_path / "state.db")
+
+    class UblClient(FakeClient):
+        async def download(self, message_id: str) -> DownloadedMessage:
+            message = DownloadedMessage.from_zip(_zip_bytes())
+            # Pre-seed the lazily parsed view — the fake ZIP is not real UBL.
+            message.__dict__["view"] = InvoiceDocument.model_construct(
+                kind=DocumentKind.INVOICE,
+                number="1882",
+                issue_date=dt.date(2026, 6, 17),
+                currency="RON",
+                seller=Seller.model_construct(
+                    name="Miele Appliances S.R.L.", vat_id="RO222"
+                ),
+                buyer=Party.model_construct(name="Client SRL", vat_id="RO111"),
+            )
+            return message
+
+    report = await _run(UblClient(_items()), config, state)
+
+    assert report.downloaded == 1
+    folder = tmp_path / "archive" / "111"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "Miele Appliances S.R.L.json",
+        "Miele Appliances S.R.L.xml",
+        "Miele Appliances S.R.L.zip",
+        "Miele Appliances S.R.L_semnatura.xml",
+    ]
+    # The catalog's base_path is what the tray resolves files from: it must be
+    # the same base the artifacts were appended to, dots and all.
+    base_path = _row(tmp_path / "state.db", "m1")["base_path"]
+    assert base_path.endswith("111/Miele Appliances S.R.L")
 
 
 async def test_catalog_fields_land_in_the_db(tmp_path: Path) -> None:

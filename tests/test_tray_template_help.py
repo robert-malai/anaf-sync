@@ -158,7 +158,7 @@ def test_expanding_never_makes_the_form_scroll_sideways(
     on Windows fonts as well as Linux ones.
     """
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     view = _themed(tmp_path / "state.db", config)
     view._template_help._toggle.setChecked(True)
     width = _narrowest(view)
@@ -182,7 +182,7 @@ def test_the_list_scrolls_only_below_the_reflow_breakpoint(
     scrolled, defeating the whole point of going wide.
     """
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
 
     def build(width: int) -> SettingsView:
         view = _themed(tmp_path / "state.db", config)
@@ -300,7 +300,7 @@ def test_insertion_splices_at_the_caret(
     _no_schedule: None, qtbot: object, tmp_path: Path
 ) -> None:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     view = SettingsView(state_path=tmp_path / "state.db", config_path=config)
 
     view._template.setText("{cif}/{number}")
@@ -317,7 +317,7 @@ def test_insertion_replaces_the_selection(
     _no_schedule: None, qtbot: object, tmp_path: Path
 ) -> None:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     view = SettingsView(state_path=tmp_path / "state.db", config_path=config)
 
     view._template.setText("{cif}/{number}")

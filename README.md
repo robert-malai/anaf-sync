@@ -117,17 +117,21 @@ acesta.
 ## Configurare
 
 ```bash
-anaf-sync init            # scrie un config.toml comentat
-anaf-sync status          # arată unde se află fișierul pe platforma ta
+anaf-sync init 12345678             # config.toml comentat, cu CIF-ul tău în el
+anaf-sync init 12345678 87654321    # mai multe firme deodată
+anaf-sync status                    # arată unde se află fișierul pe platforma ta
 ```
+
+CIF-ul e obligatoriu — fișierul se scrie gata configurat, nu cu un exemplu pe
+care să-l uiți neînlocuit. Prefixul `RO` e opțional (se elimină automat).
 
 Fișierul generat e comentat și acoperă toate cheile: `cif = "12345678"` (sau
 `cifs = ["...", "..."]` pentru mai multe firme), `direction` (`received`,
 `sent` sau `both`), `lookback_days` (1–60 — limita de retenție ANAF) și
 `failure_retention_days`, plus secțiunea `[output]` de mai jos. Dacă vrei
 config-ul în altă parte, `--config`/`-c` (sau variabila de mediu
-`ANAF_SYNC_CONFIG`) funcționează la orice comandă; `anaf-sync init --force`
-suprascrie un fișier existent.
+`ANAF_SYNC_CONFIG`) funcționează la orice comandă; `anaf-sync init <CIF>
+--force` suprascrie un fișier existent.
 
 Partea interesantă e șablonul de căi:
 
@@ -161,6 +165,26 @@ numele lunilor sunt cu literă mică, conform normelor limbii române), iar
 foldere sortate cronologic, combină numărul și numele lunii:
 `{issue_date:%m}-{issue_month}` → `07-iulie`.
 
+### Ce se salvează pentru fiecare factură
+
+`artifacts` alege ce ajunge pe disc: `zip` (arhiva semnată, exact cum o dă
+ANAF), `xml` (UBL-ul facturii), `signature` (semnătura detașată a Ministerului
+Finanțelor), `pdf` (randarea făcută de ANAF) și `metadata` (un fișier JSON cu
+detaliile mesajului).
+
+Tentația e să păstrezi doar PDF-ul — e singurul pe care îl citești efectiv.
+Merită totuși să lași `zip`-ul în listă: el e originalul semnat, iar toate
+celelalte se obțin din el (XML-ul și semnătura sunt fișierele din interiorul
+lui, iar PDF-ul e o randare a XML-ului). Invers nu funcționează: dintr-o arhivă
+numai cu PDF-uri nu mai poți reconstitui nimic, iar ANAF nu îți mai dă factura
+după 60 de zile. Pe scurt: PDF-ul e ce citești, `zip`-ul e ce păstrezi.
+
+Dacă niciun artefact configurat nu poate fi scris pentru un mesaj — de exemplu
+o arhivă doar cu `pdf`, iar serviciul de randare al ANAF refuză documentul —
+mesajul **nu** e marcat ca arhivat: rularea îl raportează ca eșec, îl vezi în
+`anaf-sync status` și se reîncearcă automat la următoarea rulare, cât timp
+fereastra de 60 de zile e încă deschisă.
+
 ## Rulare
 
 ```bash
@@ -175,6 +199,37 @@ arhivate, așa că ferestrele de 60 de zile care se suprapun nu duplică
 niciodată nimic, iar ce urmează ANAF să șteargă a fost deja capturat.
 `--redownload` sare peste această evidență și aduce din nou tot ce e încă în
 SPV, rescriind fișierele pe căile date de șablonul curent.
+
+## Facturi mai vechi de 60 de zile
+
+ANAF păstrează mesajele 60 de zile și atât. Orice factură mai veche de-atât nu
+mai poate fi descărcată — dar dacă ai deja arhivele ZIP pe disc (descărcate
+manual din SPV, de contabil, sau de o instalare anterioară), `backfill` le
+citește și le trece în catalog:
+
+```bash
+anaf-sync backfill ~/Arhiva-veche --dry-run   # arată ce ar cataloga
+anaf-sync backfill ~/Arhiva-veche             # citește și catalogează
+```
+
+Comanda **doar citește**: nu descarcă, nu mută și nu redenumește nimic —
+fișierele rămân exact unde sunt. Din fiecare ZIP scoate numărul, data, partenerul,
+valoarea și moneda, iar sensul facturii (primită sau trimisă) îl deduce din CIF-urile
+din documentul propriu-zis. Facturile între alte firme decât ale tale sunt sărite
+și doar numărate.
+
+Două lucruri nu se pot reconstitui din fișiere, pentru că există numai în
+listarea ANAF: tipul mesajului și data la care factura a intrat în SPV — deci
+pentru rândurile aduse prin `backfill` verificarea „declarată cu întârziere” nu
+are pe ce să se bazeze. Din acelaşi motiv aceste rânduri **nu** blochează
+descărcările: dacă o factură catalogată astfel e încă în fereastra de 60 de zile,
+`sync` o va aduce oricum de la ANAF, cu id-ul ei real. Poți rula comanda de
+câte ori vrei — a doua oară actualizează aceleași rânduri, nu le dublează.
+
+Aceeași comandă reface catalogul dacă baza de date se pierde: rulează
+`backfill` peste folderul din `[output] directory` și rândurile care lipsesc
+sunt recitite din ZIP-uri. Cele deja catalogate sunt lăsate neatinse — id-ul lor
+real de la ANAF e mai bun decât orice se poate deduce de pe disc.
 
 ## Programare
 

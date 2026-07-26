@@ -231,6 +231,7 @@ def test_mutations_commit_before_returning(tmp_path: Path) -> None:
 
 
 def test_v1_db_migrates_in_place_and_keeps_old_rows(tmp_path: Path) -> None:
+    """A v1 archive crosses every later migration in one open."""
     path = tmp_path / "state.db"
     _make_v1_db(path)
 
@@ -239,6 +240,7 @@ def test_v1_db_migrates_in_place_and_keeps_old_rows(tmp_path: Path) -> None:
         entry = archive.catalog()[0]
         assert entry.message_id == "old"
         assert entry.created_at is None  # migrated rows keep NULL
+        assert entry.source == "sync"  # pre-backfill rows were all downloaded
 
     conn = sqlite3.connect(path)
     version = conn.execute(
@@ -246,8 +248,39 @@ def test_v1_db_migrates_in_place_and_keeps_old_rows(tmp_path: Path) -> None:
     ).fetchone()[0]
     cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
     conn.close()
-    assert version == "2"
-    assert "created_at" in cols
+    assert version == "3"
+    assert {"created_at", "source"} <= cols
+
+
+def test_v2_db_migrates_to_v3_and_marks_existing_rows_synced(tmp_path: Path) -> None:
+    """Everything already in a v2 archive was downloaded, never backfilled.
+
+    The ``NOT NULL DEFAULT 'sync'`` does that in the ``ALTER`` itself, so no
+    row is left in a third "unknown provenance" state.
+    """
+    path = tmp_path / "state.db"
+    with Archive.open(path) as archive:  # a v3 archive...
+        archive.record(_entry("m1", "a/b"))
+    conn = sqlite3.connect(path)  # ...wound back to v2
+    conn.execute("ALTER TABLE messages DROP COLUMN source")
+    conn.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
+    conn.commit()
+    conn.close()
+
+    with Archive.open(path) as archive:
+        assert archive.catalog()[0].source == "sync"
+        assert archive.is_archived("m1")
+
+
+def test_backfill_source_roundtrips(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    with Archive.open(path) as archive:
+        archive.record(_entry("backfill:abc", "a/b", source="backfill"))
+        archive.record(_entry("m1", "c/d"))
+
+    with Archive.open(path) as archive:
+        by_id = {e.message_id: e.source for e in archive.catalog()}
+        assert by_id == {"backfill:abc": "backfill", "m1": "sync"}
 
 
 def test_created_at_roundtrips(tmp_path: Path) -> None:

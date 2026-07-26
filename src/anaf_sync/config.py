@@ -10,6 +10,7 @@ a TOML file the user owns.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Iterable, Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
@@ -29,6 +30,7 @@ __all__ = [
     "default_config_path",
     "default_state_path",
     "load_config",
+    "normalise_cifs",
     "write_default_config",
 ]
 
@@ -58,6 +60,25 @@ _DEFAULT_TEMPLATE = (
     "{cif}/{direction}/{issue_date:%Y}/{issue_date:%m}/"
     "{issue_date:%Y-%m-%d}_{number}_{partner_name}"
 )
+
+
+def normalise_cifs(values: Iterable[str]) -> list[str]:
+    """Drop the optional ``RO`` prefix and check every CIF is numeric.
+
+    Shared by the config validator and ``init`` so a CIF typed on the command
+    line is held to exactly the rule the TOML file is.
+
+    Raises:
+        ValueError: no CIF was given, or one is not numeric once the prefix
+            and surrounding whitespace are stripped.
+    """
+    cleaned = [str(cif).strip().upper().removeprefix("RO") for cif in values]
+    if not cleaned:
+        raise ValueError("at least one CIF is required")
+    for cif in cleaned:
+        if not cif.isdigit():
+            raise ValueError(f"CIF {cif!r} is not numeric (drop any RO prefix)")
+    return cleaned
 
 
 class Direction(StrEnum):
@@ -120,11 +141,7 @@ class SyncConfig(BaseModel):
     @field_validator("cifs")
     @classmethod
     def _digits_only(cls, value: list[str]) -> list[str]:
-        cleaned = [str(cif).strip().upper().removeprefix("RO") for cif in value]
-        for cif in cleaned:
-            if not cif.isdigit():
-                raise ValueError(f"CIF {cif!r} is not numeric (drop any RO prefix)")
-        return cleaned
+        return normalise_cifs(value)
 
 
 class AuthSettings(BaseSettings):
@@ -188,14 +205,24 @@ def load_config(path: Path) -> SyncConfig:
     """
     if not path.exists():
         raise FileNotFoundError(
-            f"no configuration at {path} — run `anaf-sync init` to create one"
+            f"no configuration at {path} — run `anaf-sync init <CIF>` to create one"
         )
     with path.open("rb") as fh:
         data = tomllib.load(fh)
     return SyncConfig.model_validate(data)
 
 
-_DEFAULT_CONFIG_TOML = f"""\
+def _cif_block(cifs: Sequence[str]) -> str:
+    """The CIF assignment, singular or plural, with the other form as a hint."""
+    if len(cifs) == 1:
+        return f'cif = "{cifs[0]}"\n# ...or several:  cifs = ["12345678", "87654321"]'
+    listed = ", ".join(f'"{cif}"' for cif in cifs)
+    return f'cifs = [{listed}]\n# ...or a single one:  cif = "{cifs[0]}"'
+
+
+def _render_config(cifs: Sequence[str]) -> str:
+    """The commented config file, with the caller's CIF(s) already filled in."""
+    return f"""\
 # anaf-sync configuration.
 #
 # Credentials are NOT stored here: anaf-sync reuses the anafpy login
@@ -203,8 +230,7 @@ _DEFAULT_CONFIG_TOML = f"""\
 # environment variables, exactly like the anafpy MCP server.
 
 # The company CIF(s) to archive invoices for (numeric, no RO prefix).
-cif = "12345678"
-# ...or several:  cifs = ["12345678", "87654321"]
+{_cif_block(cifs)}
 
 # Which invoices to download: "received", "sent", or "both".
 direction = "received"
@@ -253,18 +279,32 @@ template = "{_DEFAULT_TEMPLATE}"
 # What to save per invoice: "zip" (raw signed archive), "xml" (invoice UBL),
 # "signature" (detached MF signature), "pdf" (ANAF's rendering), "metadata"
 # (JSON sidecar with the message details).
+#
+# Keep "zip" unless you have a reason not to. It is the signed original ANAF
+# hands over, and every other artifact derives from it: the XML and the
+# signature are its members, and the PDF is a rendering of the XML. The reverse
+# does not hold — a PDF-only archive cannot be turned back into any of the
+# others, and ANAF will not re-issue the invoice past 60 days.
 artifacts = ["zip", "pdf"]
 """
 
 
-def write_default_config(path: Path, *, force: bool = False) -> Path:
-    """Write the commented default config to ``path``.
+def write_default_config(
+    path: Path, *, cifs: Sequence[str], force: bool = False
+) -> Path:
+    """Write the commented default config for ``cifs`` to ``path``.
+
+    The CIF is required rather than a placeholder: a config that cannot sync
+    until it is hand-edited is a config the user can forget to edit, and the
+    failure only shows up on the first scheduled run.
 
     Raises:
+        ValueError: ``cifs`` is empty or holds a non-numeric CIF.
         FileExistsError: the file exists and ``force`` is not set.
     """
+    cleaned = normalise_cifs(cifs)
     if path.exists() and not force:
         raise FileExistsError(f"{path} already exists (use --force to overwrite)")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_DEFAULT_CONFIG_TOML, encoding="utf-8")
+    path.write_text(_render_config(cleaned), encoding="utf-8")
     return path

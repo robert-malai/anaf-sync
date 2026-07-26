@@ -13,7 +13,7 @@ _NOW = dt.datetime(2026, 7, 20, 12, 0, tzinfo=dt.UTC)
 
 def _config(tmp_path: Path) -> Path:
     path = tmp_path / "config.toml"
-    write_default_config(path)
+    write_default_config(path, cifs=["12345678"])
     return path
 
 

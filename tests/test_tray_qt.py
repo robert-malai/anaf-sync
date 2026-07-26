@@ -66,7 +66,7 @@ def test_status_color_maps_states() -> None:
 
 def _app(tmp_path: Path) -> TrayApp:
     config = tmp_path / "config.toml"
-    write_default_config(config)
+    write_default_config(config, cifs=["12345678"])
     return TrayApp(state_path=tmp_path / "state.db", config_path=config)
 
 

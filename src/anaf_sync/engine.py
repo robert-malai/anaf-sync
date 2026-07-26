@@ -34,7 +34,7 @@ from tenacity import (
 from .config import Artifact, Direction, SyncConfig
 from .context import direction_of, project_message
 from .state import Archive, CatalogEntry
-from .template import PathTemplate
+from .template import PathTemplate, artifact_path
 
 __all__ = ["SyncReport", "run_sync"]
 
@@ -158,6 +158,20 @@ async def _sync_cif(
             report.failures.append((message_id, str(exc)))
             state.record_failure(message_id, str(exc))  # visibility only, no gate
             continue
+        if not entry.artifacts:
+            # Nothing reached the disk — every configured artifact declined this
+            # message (a pdf-only archive whose render ANAF refused, say).
+            # Recording it would mark the message archived *forever*: the dedupe
+            # gate never forgets, and past ANAF's 60-day window the message can
+            # never be listed again, so the invoice would be lost with an `ok`
+            # exit code. Report it instead, and let the next run retry while the
+            # window is still open.
+            configured = ", ".join(a.value for a in config.output.artifacts)
+            reason = f"no artifact could be written (configured: {configured})"
+            log.error("nothing_written", message_id=message_id, error=reason)
+            report.failures.append((message_id, reason))
+            state.record_failure(message_id, reason)
+            continue
         # record() commits one transaction: a crash never redoes or loses work.
         state.record(entry)
         report.downloaded += 1
@@ -200,6 +214,10 @@ async def _archive_message(
     The entry describes what is on disk (the base path, the artifact values
     actually written), not what was configured, plus the best-effort catalog
     fields projected from the message and its view.
+
+    ``entry.artifacts`` can come back empty — every configured artifact is
+    allowed to decline a message. That is not an archived message, and the
+    caller must not record it; see :func:`_sync_cif`.
     """
     assert item.id is not None
     direction = direction_of(item)
@@ -240,25 +258,25 @@ async def _write_artifact(
     """Write one artifact next to ``base``; returns its path, or ``None`` when
     the message has nothing to satisfy it (e.g. no signature member)."""
     if artifact is Artifact.ZIP:
-        path = base.with_suffix(".zip")
+        path = artifact_path(base, ".zip")
         path.write_bytes(message.raw_zip)
         return path
     if artifact is Artifact.XML:
         if message.content_xml is None:
             logger.warning("no_content_xml", message_id=item.id)
             return None
-        path = base.with_suffix(".xml")
+        path = artifact_path(base, ".xml")
         path.write_bytes(message.content_xml)
         return path
     if artifact is Artifact.SIGNATURE:
         if message.signature_xml is None:
             logger.warning("no_signature_xml", message_id=item.id)
             return None
-        path = Path(f"{base}_semnatura.xml")
+        path = artifact_path(base, "_semnatura.xml")
         path.write_bytes(message.signature_xml)
         return path
     if artifact is Artifact.METADATA:
-        path = base.with_suffix(".json")
+        path = artifact_path(base, ".json")
         payload = {
             "message": item.model_dump(),
             "context": context,
@@ -299,6 +317,6 @@ async def _write_pdf(
     if not body.startswith(b"%PDF"):
         logger.warning("pdf_render_failed", message_id=item.id, body=body[:120])
         return None
-    path = base.with_suffix(".pdf")
+    path = artifact_path(base, ".pdf")
     path.write_bytes(body)
     return path

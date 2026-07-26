@@ -166,9 +166,10 @@ def test_range_calendar_third_click_starts_over(qtbot: object) -> None:
 
 def test_artifact_path_matches_engine_naming() -> None:
     assert artifact_path("/arch/2026/f1", ".pdf") == Path("/arch/2026/f1.pdf")
-    # Dotted base name: identical to the engine's own base.with_suffix(".zip"),
-    # which replaces from the last dot — the point is they agree, byte-for-byte.
-    assert artifact_path("/arch/ACME S.R.L", ".zip") == Path("/arch/ACME S.R.zip")
+    # A dotted base keeps every dot-segment: `S.R.L` is a legal form, not an
+    # extension. `Path.with_suffix` would file this as "ACME S.R.zip".
+    assert artifact_path("/arch/ACME S.R.L", ".zip") == Path("/arch/ACME S.R.L.zip")
+    assert artifact_path("/arch/FCT.1001", ".pdf") == Path("/arch/FCT.1001.pdf")
 
 
 def test_month_end() -> None:
