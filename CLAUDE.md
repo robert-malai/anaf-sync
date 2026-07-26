@@ -35,6 +35,7 @@ is considered done.
 | `cli.py` | cyclopts commands; the only place exceptions are caught for the user |
 | `config.py` | TOML sync config + `ANAFPY_*` env auth settings; `init` template |
 | `engine.py` | one sync pass: list → dedupe → download (retry) → write artifacts |
+| `backfill.py` | catalogs invoices already on disk (past ANAF's 60-day window, or a lost DB); read-only, and its rows never gate a download |
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |
 | `logsink.py` | console/system log-mode detection + native sinks: Event Log, os_log, journald |
@@ -55,6 +56,14 @@ is considered done.
   message (WAL, `synchronous=NORMAL`). A crash mid-run must never lose or
   duplicate work; downloaded records are permanent, so the dedupe gate is
   "was this message id *ever* archived".
+- **The dedupe gate answers only for real ANAF message ids.** `backfill` rows
+  carry a synthetic `backfill:<digest>` id and must never suppress a download:
+  nothing on disk holds the `id_descarcare`, and the ZIP member names hold the
+  *upload* index, which the sender's and receiver's copies of one invoice
+  share. A duplicate costs one file; a false skip loses an invoice for good
+  once ANAF's 60-day window shuts. `CatalogEntry.source` marks provenance —
+  and warns readers that `created_at` is `None` on those rows, which
+  `health.is_delayed` cannot distinguish from "on time".
 - **Path safety.** Every substituted template value is sanitised
   (`template.py`); rendered paths must stay relative and inside the output
   root. Windows-illegal characters and trailing dots/spaces are handled there

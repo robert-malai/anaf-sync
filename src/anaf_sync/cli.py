@@ -21,6 +21,7 @@ from .autostart import AutostartError
 from .autostart import install as autostart_install
 from .autostart import remove as autostart_remove
 from .autostart import status as autostart_status
+from .backfill import run_backfill
 from .config import (
     AuthSettings,
     default_config_path,
@@ -305,6 +306,56 @@ async def sync(
     if not report.ok:
         for message_id, error in report.failures:
             print(f"failed {message_id}: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+@app.command
+def backfill(
+    folder: Annotated[
+        Path,
+        Parameter(help="Folder of already-downloaded invoice ZIPs to catalog."),
+    ],
+    *,
+    config: ConfigOption = None,
+    dry_run: Annotated[
+        bool,
+        Parameter(negative="", help="Report what would be cataloged; write nothing."),
+    ] = False,
+) -> int:
+    """Catalog invoices already on disk that ANAF no longer lists.
+
+    Reads only — nothing is downloaded, moved, or renamed. Cataloged rows are
+    browsable in the tray but never suppress a download: they carry no ANAF
+    message id, and `sync` must stay free to re-fetch anything still inside
+    ANAF's 60-day window.
+    """
+    config_path = _resolve_config_path(config)
+    state_path = default_state_path()
+    try:
+        cfg = load_config(config_path)
+        # The same lock `sync` takes: both write the archive, and a scheduled
+        # run landing mid-backfill would interleave writes to one database.
+        with (
+            sync_lock(state_path.with_name("sync.lock")),
+            Archive.open(state_path) as state,
+        ):
+            report = run_backfill(folder.expanduser(), cfg, state, dry_run=dry_run)
+    except (FileNotFoundError, ValueError, LockHeldError) as exc:
+        return _fail(str(exc))
+
+    # Deliberately no `_record_run`: `last_run` is the *schedule's* health, read
+    # by the tray to tell a working cron from a broken one. A manual backfill
+    # is not a sync, and recording it there would mask a stalled schedule.
+    print(
+        f"scanned {report.scanned} | "
+        f"{'would catalog' if dry_run else 'cataloged'} {report.indexed} | "
+        f"already known {report.already_known} | "
+        f"not an invoice {report.not_ubl} | other CIF {report.foreign}"
+    )
+    if not report.ok:
+        for path, error in report.failures:
+            print(f"failed {path}: {error}", file=sys.stderr)
         return 1
     return 0
 

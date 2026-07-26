@@ -196,6 +196,37 @@ niciodată nimic, iar ce urmează ANAF să șteargă a fost deja capturat.
 `--redownload` sare peste această evidență și aduce din nou tot ce e încă în
 SPV, rescriind fișierele pe căile date de șablonul curent.
 
+## Facturi mai vechi de 60 de zile
+
+ANAF păstrează mesajele 60 de zile și atât. Orice factură mai veche de-atât nu
+mai poate fi descărcată — dar dacă ai deja arhivele ZIP pe disc (descărcate
+manual din SPV, de contabil, sau de o instalare anterioară), `backfill` le
+citește și le trece în catalog:
+
+```bash
+anaf-sync backfill ~/Arhiva-veche --dry-run   # arată ce ar cataloga
+anaf-sync backfill ~/Arhiva-veche             # citește și catalogează
+```
+
+Comanda **doar citește**: nu descarcă, nu mută și nu redenumește nimic —
+fișierele rămân exact unde sunt. Din fiecare ZIP scoate numărul, data, partenerul,
+valoarea și moneda, iar sensul facturii (primită sau trimisă) îl deduce din CIF-urile
+din documentul propriu-zis. Facturile între alte firme decât ale tale sunt sărite
+și doar numărate.
+
+Două lucruri nu se pot reconstitui din fișiere, pentru că există numai în
+listarea ANAF: tipul mesajului și data la care factura a intrat în SPV — deci
+pentru rândurile aduse prin `backfill` verificarea „declarată cu întârziere” nu
+are pe ce să se bazeze. Din acelaşi motiv aceste rânduri **nu** blochează
+descărcările: dacă o factură catalogată astfel e încă în fereastra de 60 de zile,
+`sync` o va aduce oricum de la ANAF, cu id-ul ei real. Poți rula comanda de
+câte ori vrei — a doua oară actualizează aceleași rânduri, nu le dublează.
+
+Aceeași comandă reface catalogul dacă baza de date se pierde: rulează
+`backfill` peste folderul din `[output] directory` și rândurile care lipsesc
+sunt recitite din ZIP-uri. Cele deja catalogate sunt lăsate neatinse — id-ul lor
+real de la ANAF e mai bun decât orice se poate deduce de pe disc.
+
 ## Programare
 
 ```bash
