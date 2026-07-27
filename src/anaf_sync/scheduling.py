@@ -3,21 +3,29 @@
 Windows uses Task Scheduler (``schtasks``), Linux a systemd *user* timer, and
 macOS a launchd agent. Each backend runs ``anaf-sync sync`` with the resolved
 console-script path, so the job works regardless of how the venv is activated.
+
+:func:`status` reads the cadence back *from the scheduler* rather than from a
+record of our own — the OS holds the truth, and a second copy would be one more
+thing to drift.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 __all__ = [
+    "Cadence",
     "ScheduleError",
     "install",
+    "installed_cadence",
     "resolve_script",
     "run_checked",
     "status",
@@ -32,9 +40,83 @@ _UNIT_NAME = "anaf-sync"  # systemd user unit stem
 _INTERVAL_RE = re.compile(r"^(\d+)\s*([mhd])$", re.IGNORECASE)
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
+# Reading a cadence back: Task Scheduler's XML namespace and duration format,
+# and the two systemd timer directives `_install_systemd` writes.
+_TASK_NS = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
+_DURATION_RE = re.compile(
+    r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$", re.IGNORECASE
+)
+_ON_ACTIVE_RE = re.compile(r"^OnUnitActiveSec=(\d+)s?$", re.MULTILINE)
+_ON_CALENDAR_RE = re.compile(
+    r"^OnCalendar=\*-\*-\* (\d{2}):(\d{2}):\d{2}$", re.MULTILINE
+)
+
 
 class ScheduleError(RuntimeError):
     """Installing or removing the scheduled job failed."""
+
+
+@dataclasses.dataclass(frozen=True)
+class Cadence:
+    """How often the installed job runs, as read back from the scheduler.
+
+    Exactly one of the two fields is set, mirroring ``schedule install``'s
+    ``--every`` / ``--daily-at``.
+    """
+
+    every: dt.timedelta | None = None
+    daily_at: tuple[int, int] | None = None
+
+    def __post_init__(self) -> None:
+        if (self.every is None) == (self.daily_at is None):
+            raise ValueError("a cadence is either an interval or a daily time")
+
+    def describe(self) -> str:
+        """The cadence in the vocabulary of the flags that installed it."""
+        if self.daily_at is not None:
+            hour, minute = self.daily_at
+            return f"daily at {hour:02d}:{minute:02d}"
+        assert self.every is not None
+        return f"every {format_interval(self.every)}"
+
+    @property
+    def cron(self) -> str | None:
+        """The equivalent five-field cron expression, or ``None``.
+
+        ``None`` whenever cron cannot express the cadence *exactly*: its step
+        syntax restarts each hour and each day, so only divisors of 60 minutes
+        and of 24 hours survive — ``every 45m`` and ``every 2d`` do not, and a
+        familiar-but-wrong expression is worse than none.
+
+        The expression describes the *cadence*, not the anchor: an interval job
+        counts from when it was installed, so its real firing times are
+        generally offset from cron's wall-clock grid.
+        """
+        if self.daily_at is not None:
+            hour, minute = self.daily_at
+            return f"{minute} {hour} * * *"
+        assert self.every is not None
+        seconds = int(self.every.total_seconds())
+        if seconds % 60:
+            return None
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"*/{minutes} * * * *" if 60 % minutes == 0 else None
+        if minutes % 60:
+            return None
+        hours = minutes // 60
+        if hours == 24:
+            return "0 0 * * *"
+        return f"0 */{hours} * * *" if hours < 24 and 24 % hours == 0 else None
+
+
+def format_interval(delta: dt.timedelta) -> str:
+    """Render a timedelta the way ``--every`` spells it (``30m``, ``6h``, ``2d``)."""
+    seconds = int(delta.total_seconds())
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds % size == 0:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
 
 
 def parse_interval(value: str) -> dt.timedelta:
@@ -143,7 +225,33 @@ def uninstall() -> str:
     return f"removed systemd user timer {_UNIT_NAME!r}"
 
 
+def installed_cadence() -> Cadence | None:
+    """The cadence the OS scheduler currently holds, or ``None`` if unreadable.
+
+    ``None`` covers both "nothing is installed" and "installed, but the job was
+    hand-edited into a shape we do not model" — a diagnostic must never guess.
+    """
+    if sys.platform == "win32":
+        return _windows_cadence()
+    if sys.platform == "darwin":
+        return _launchd_cadence()
+    return _systemd_cadence()
+
+
+def _cadence_suffix(cadence: Cadence | None) -> str:
+    """`` — runs every 6h (cron: 0 */6 * * *)`` for a status line; ``""`` if unknown."""
+    if cadence is None:
+        return ""
+    cron = cadence.cron
+    return f" — runs {cadence.describe()}" + (f" (cron: {cron})" if cron else "")
+
+
 def status() -> str:
+    """The installed state and cadence, as ``status`` and the tray print it.
+
+    The exact string ``"not installed"`` is the contract both callers test
+    against — keep it verbatim.
+    """
     if sys.platform == "win32":
         result = subprocess.run(
             ["schtasks", "/Query", "/TN", _TASK_NAME],
@@ -152,7 +260,8 @@ def status() -> str:
         )
         if result.returncode != 0:
             return "not installed"
-        return f"Task Scheduler task {_TASK_NAME!r}: installed"
+        suffix = _cadence_suffix(_windows_cadence())
+        return f"Task Scheduler task {_TASK_NAME!r}: installed{suffix}"
     if sys.platform == "darwin":
         if not _launchd_plist_path().exists():
             return "not installed"
@@ -160,14 +269,20 @@ def status() -> str:
             ["launchctl", "list", _LAUNCHD_LABEL], capture_output=True, text=True
         )
         loaded = "loaded" if result.returncode == 0 else "installed but not loaded"
-        return f"launchd agent {_LAUNCHD_LABEL}: {loaded}"
+        suffix = _cadence_suffix(_launchd_cadence())
+        return f"launchd agent {_LAUNCHD_LABEL}: {loaded}{suffix}"
     result = subprocess.run(
         ["systemctl", "--user", "list-timers", f"{_UNIT_NAME}.timer", "--all"],
         capture_output=True,
         text=True,
     )
     out = result.stdout.strip()
-    return out if _UNIT_NAME in out else "not installed"
+    if _UNIT_NAME not in out:
+        return "not installed"
+    # The timer table carries the next elapse, which no other backend reports —
+    # worth keeping under our own summary line.
+    suffix = _cadence_suffix(_systemd_cadence())
+    return f"systemd user timer {_UNIT_NAME!r}: installed{suffix}\n{out}"
 
 
 # -- Windows ---------------------------------------------------------------------
@@ -208,6 +323,55 @@ def _install_windows(exe: Path, every: str | None, daily_at: str | None) -> str:
         f"Task Scheduler task {_TASK_NAME!r} installed — runs {when} "
         "(only while you are logged on)"
     )
+
+
+def _parse_duration(value: str) -> dt.timedelta | None:
+    """ISO 8601 duration (``PT30M``) → timedelta; ``None`` if unrecognised."""
+    match = _DURATION_RE.match(value.strip())
+    if match is None:
+        return None
+    days, hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    delta = dt.timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+    return delta or None
+
+
+def _cadence_from_task_xml(raw: bytes) -> Cadence | None:
+    """Read the cadence out of ``schtasks /XML`` output.
+
+    XML rather than ``/FO LIST``: the list format is localised, so a Romanian
+    Windows prints its own field names. ElementTree is handed the raw bytes on
+    purpose — schtasks emits UTF-16, and only the XML declaration says so.
+    """
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return None
+    interval = root.find(f".//{_TASK_NS}Repetition/{_TASK_NS}Interval")
+    if interval is not None and (delta := _parse_duration(interval.text or "")):
+        return Cadence(every=delta)
+    # No repetition: a ``/SC DAILY`` task. ``/MO n`` above 1 is an n-day
+    # interval; a plain daily task is pinned to its start time.
+    days = root.find(f".//{_TASK_NS}ScheduleByDay/{_TASK_NS}DaysInterval")
+    if days is None:
+        return None
+    count = int(days.text) if days.text and days.text.isdigit() else 1
+    if count > 1:
+        return Cadence(every=dt.timedelta(days=count))
+    start = root.find(f".//{_TASK_NS}CalendarTrigger/{_TASK_NS}StartBoundary")
+    if start is None or not start.text:
+        return None
+    try:
+        moment = dt.datetime.fromisoformat(start.text.strip())
+    except ValueError:
+        return None
+    return Cadence(daily_at=(moment.hour, moment.minute))
+
+
+def _windows_cadence() -> Cadence | None:
+    result = subprocess.run(
+        ["schtasks", "/Query", "/TN", _TASK_NAME, "/XML", "ONE"], capture_output=True
+    )
+    return None if result.returncode != 0 else _cadence_from_task_xml(result.stdout)
 
 
 # -- Linux (systemd user units) ---------------------------------------------------
@@ -260,6 +424,19 @@ WantedBy=timers.target
     )
 
 
+def _systemd_cadence() -> Cadence | None:
+    """The cadence written into the timer unit, or ``None`` if it is not ours."""
+    try:
+        unit = (_systemd_unit_dir() / f"{_UNIT_NAME}.timer").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if match := _ON_ACTIVE_RE.search(unit):
+        return Cadence(every=dt.timedelta(seconds=int(match.group(1))))
+    if match := _ON_CALENDAR_RE.search(unit):
+        return Cadence(daily_at=(int(match.group(1)), int(match.group(2))))
+    return None
+
+
 # -- macOS (launchd) ---------------------------------------------------------------
 
 
@@ -287,3 +464,20 @@ def _install_macos(exe: Path, every: str | None, daily_at: str | None) -> str:
     path.write_bytes(plistlib.dumps(plist))
     _run(["launchctl", "load", str(path)])
     return f"launchd agent {_LAUNCHD_LABEL!r} installed — runs {when}"
+
+
+def _launchd_cadence() -> Cadence | None:
+    """The cadence written into the agent's plist, or ``None`` if it is not ours."""
+    try:
+        plist = plistlib.loads(_launchd_plist_path().read_bytes())
+    except (OSError, plistlib.InvalidFileException):
+        return None
+    if isinstance(seconds := plist.get("StartInterval"), int) and seconds > 0:
+        return Cadence(every=dt.timedelta(seconds=seconds))
+    calendar = plist.get("StartCalendarInterval")
+    if not isinstance(calendar, dict):
+        return None
+    hour, minute = calendar.get("Hour"), calendar.get("Minute")
+    if not isinstance(hour, int) or not isinstance(minute, int):
+        return None
+    return Cadence(daily_at=(hour, minute))

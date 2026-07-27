@@ -269,6 +269,19 @@ Task Scheduler pe Windows, un timer systemd de utilizator pe Linux
 (`loginctl enable-linger $USER` ca să ruleze și fără sesiune deschisă),
 launchd pe macOS. Fără daemon propriu.
 
+`schedule status` — și rândul `schedule:` din `anaf-sync status` — citește
+ritmul chiar din planificator și îl arată și ca expresie cron, ca să vezi dintr-o
+privire ce s-a instalat de fapt:
+
+```
+launchd agent ro.anaf-sync.sync: loaded — runs daily at 07:30 (cron: 30 7 * * *)
+```
+
+Expresia cron descrie doar ritmul, nu și punctul de pornire: un interval
+(`--every`) se numără de la momentul instalării, deci orele reale pot fi
+decalate față de cele din cron. Când ritmul nu încape exact într-o expresie
+cron (`--every 45m`, `--every 2d`), nu e afișată niciuna — doar intervalul.
+
 ## Aplicația din bara de sistem (opțional)
 
 Un companion desktop discret afișează starea arhivei printr-o iconiță în bara
