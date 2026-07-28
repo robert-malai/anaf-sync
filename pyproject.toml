@@ -48,8 +48,13 @@ Issues = "https://github.com/robert-malai/anaf-sync/issues"
 
 [project.scripts]
 anaf-sync = "anaf_sync.cli:main"
-# The guard in `anaf_sync/tray/__init__.py`: prints an install hint (never a
-# traceback) when the `tray` extra / PySide6 is absent, then delegates to app.
+
+# A gui-script, not a console script: on Windows the launcher links against
+# pythonw.exe, so starting the tray opens no console window and the shell gets
+# its prompt back at once (on macOS/Linux the two kinds are identical, and the
+# entry point detaches itself — see `anaf_sync/tray/__init__.py`, which also
+# guards the missing `tray` extra with an install hint instead of a traceback).
+[project.gui-scripts]
 anaf-sync-tray = "anaf_sync.tray:main"
 
 [dependency-groups]
