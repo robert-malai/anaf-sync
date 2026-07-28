@@ -5,7 +5,7 @@ at) over :class:`CatalogModel`, painted by :class:`CatalogDelegate`. Setări is
 a **separate window** (:mod:`settings_window`), not a page of a stack; this
 window only asks for it through :attr:`MainWindow.settings_requested`. The
 layout is elastic per DESIGN.md §10: the table absorbs extra space (Partener
-is the stretch section, the other four are user-resizable), while the details
+is the stretch section, the other five are user-resizable), while the details
 pane and toolbar rows stay anchored. Geometry and header layout persist
 across launches through ``QSettings`` — deliberately not ``config.toml``,
 which only churns on explicit saves. The window is a pure observer: selecting
@@ -52,21 +52,30 @@ __all__ = ["MainWindow", "reveal_in_file_manager"]
 _WIDTH = 980
 _HEIGHT = 620
 
-#: Column 2 (Partener) is the stretch section; these four are fixed. The
+#: Column 3 (Partener) is the stretch section; these five are fixed. The
 #: mockup's px were measured in a browser at 13px, so they are a *floor*: the
 #: real width also has to fit the platform's own font, or a date or a total
 #: would render clipped on a machine with wider metrics.
-_COL_CONTENT = {0: 84, 1: 88, 3: 76, 4: 96}
+_COL_CONTENT = {0: 84, 1: 84, 2: 88, 4: 76, 5: 96}
+_STRETCH_COL = 3  # Partener
 #: The widest value each fixed column has to hold, for that metrics check.
-_COL_SAMPLES = {0: "00.00.0000", 1: "2026-071345", 3: "trimisă", 4: "99.999,99 RON"}
-_LAST_COL = 4
+_COL_SAMPLES = {
+    0: "00.00.0000",
+    1: "00.00.0000",
+    2: "2026-071345",
+    4: "trimisă",
+    5: "99.999,99 RON",
+}
+_LAST_COL = 5
 #: Qt's header minimum is global, not per-section — one floor for all of them.
 _MIN_SECTION = 72
 
 _TITLE = "Facturi — anaf-sync"
 _SETTINGS_BUTTON = "⚙  Setări…"
 _GEOMETRY_KEY = "facturi/geometry"
-_HEADER_KEY = "facturi/header"
+#: Versioned because the column set changed (v2 added Încărcată): a blob saved
+#: for the five-section header must not be replayed onto six sections.
+_HEADER_KEY = "facturi/header/v2"
 
 
 def _problems_chip_text(count: int) -> str:
@@ -272,10 +281,10 @@ class MainWindow(QMainWindow):
         table.setMouseTracking(True)
         header = table.horizontalHeader()
         header.setMinimumSectionSize(_MIN_SECTION)
-        # Partener stretches; the other four are Interactive, so dragging a
+        # Partener stretches; the other five are Interactive, so dragging a
         # header boundary re-proportions exactly one of them and Partener
         # absorbs the difference — the table can never exceed its viewport.
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(_STRETCH_COL, QHeaderView.ResizeMode.Stretch)
         metrics = table.fontMetrics()
         for col in _COL_CONTENT:
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)

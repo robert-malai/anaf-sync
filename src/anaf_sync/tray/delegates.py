@@ -3,7 +3,7 @@
 A ``QStyledItemDelegate`` that reads the custom roles :class:`CatalogModel`
 exposes (``FailingRole`` / ``DelayedRole`` / ``DirectionRole``) and paints the
 handoff's row treatments — a 3 px inset stripe (red for failing, amber for
-delayed), an amber-600 Data cell on delayed rows, and the direction pill. All
+delayed), an amber-600 Încărcată cell on delayed rows, and the direction pill. All
 colours come from the active :class:`Theme`; none are hard-coded here.
 """
 
@@ -29,6 +29,9 @@ __all__ = ["PAD_EDGE", "PAD_X", "CatalogDelegate"]
 _Index = QModelIndex | QPersistentModelIndex
 
 _STRIPE_WIDTH = 3
+#: Column indexes with a special treatment, mirroring ``CatalogModel._COLUMNS``.
+_COL_UPLOADED = 1
+_COL_DIRECTION = 4
 #: The mockup pads the *row* by 14px and separates columns by an 8px gap — not
 #: 14px inside every cell, which would put 28px gutters between columns and
 #: clip a ``zz.ll.aaaa`` date out of its section. Inner cells get half the gap;
@@ -64,9 +67,10 @@ class CatalogDelegate(QStyledItemDelegate):
         self._paint_background(painter, option, theme)
         self._paint_row_rule(painter, option, theme)
 
-        if col == 3:
+        if col == _COL_DIRECTION:
             self._paint_pill(painter, option, index, theme)
-        elif col == 0 and delayed:
+        elif col == _COL_UPLOADED and delayed:
+            # The highlight sits on the late fact — the upload date itself.
             self._paint_text(painter, option, index, theme.amber, bold=True)
         elif failing:
             self._paint_text(painter, option, index, theme.red)

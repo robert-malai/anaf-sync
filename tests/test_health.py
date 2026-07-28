@@ -3,11 +3,10 @@
 import datetime as dt
 
 from anaf_sync.health import (
-    DELAY_THRESHOLD_DAYS,
     days_until_purge,
     derive_health,
     is_delayed,
-    upload_delay_days,
+    upload_delay_working_days,
 )
 from anaf_sync.state import FailureRecord, RunRecord
 
@@ -49,26 +48,45 @@ def test_days_until_purge_tolerates_naive_timestamps() -> None:
     assert days_until_purge(_failure(naive), _NOW) == 40
 
 
-# -- upload_delay_days / is_delayed -------------------------------------------
+# -- upload_delay_working_days / is_delayed -----------------------------------
 
 
-def test_upload_delay_days_none_when_either_missing() -> None:
-    assert upload_delay_days(None, _NOW) is None
-    assert upload_delay_days(dt.date(2026, 7, 1), None) is None
+def test_upload_delay_none_when_either_missing() -> None:
+    assert upload_delay_working_days(None, _NOW) is None
+    assert upload_delay_working_days(dt.date(2026, 7, 1), None) is None
 
 
-def test_upload_delay_days_counts_whole_days() -> None:
-    # FF-88214 from the handoff: issued 11 iul., uploaded 19 iul. → 8 days.
-    delay = upload_delay_days(dt.date(2026, 7, 11), dt.datetime(2026, 7, 19, 8, 30))
-    assert delay == 8
+def test_upload_delay_counts_working_days_only() -> None:
+    # FF-88214 from the handoff: issued Saturday 11 iul., uploaded Monday
+    # 20 iul. → 6 working days (13–17 iul. plus the 20th; both weekends skip).
+    delay = upload_delay_working_days(
+        dt.date(2026, 7, 11), dt.datetime(2026, 7, 20, 8, 30)
+    )
+    assert delay == 6
 
 
-def test_delay_threshold_boundary() -> None:
-    # Exactly 5 days is NOT delayed; 6 is (delayed = delay > threshold).
-    issue = dt.date(2026, 7, 1)
-    at_threshold = dt.datetime(2026, 7, 1 + DELAY_THRESHOLD_DAYS, 0, 0)
-    assert is_delayed(issue, at_threshold) is False
-    assert is_delayed(issue, at_threshold + dt.timedelta(days=1)) is True
+def test_upload_delay_over_one_weekend_is_one_day() -> None:
+    # Issued Friday, uploaded Monday: the calendar says 3, the clock says 1.
+    delay = upload_delay_working_days(
+        dt.date(2026, 7, 3), dt.datetime(2026, 7, 6, 9, 0)
+    )
+    assert delay == 1
+
+
+def test_upload_delay_weekend_upload_counts_no_weekend_days() -> None:
+    # Issued Monday 13 iul., uploaded Saturday 18 iul. → Tue–Fri = 4.
+    delay = upload_delay_working_days(
+        dt.date(2026, 7, 13), dt.datetime(2026, 7, 18, 9, 0)
+    )
+    assert delay == 4
+
+
+def test_delay_threshold_boundary_in_working_days() -> None:
+    # Issued Monday 6 iul.: the 5th working day is Monday 13 iul. — on time;
+    # Tuesday 14 iul. is the 6th and delayed (delayed = delay > threshold).
+    issue = dt.date(2026, 7, 6)
+    assert is_delayed(issue, dt.datetime(2026, 7, 13, 23, 0)) is False
+    assert is_delayed(issue, dt.datetime(2026, 7, 14, 0, 0)) is True
 
 
 def test_is_delayed_false_when_either_date_missing() -> None:

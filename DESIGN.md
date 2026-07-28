@@ -317,9 +317,12 @@ follows directly from the invariants above:
 - **Schema v2 for the delay signal.** Flagging an invoice *declarată cu
   întârziere* needs both of its dates — the issue date (already stored) and when
   it entered SPV (ANAF's `data_creare`). The latter was parsed but dropped; v2
-  persists it as `created_at` so `health.upload_delay_days` can compare them
-  against a single `DELAY_THRESHOLD_DAYS` constant. The migration is the
-  additive `ALTER TABLE` described in §3.
+  persists it as `created_at` so `health.upload_delay_working_days` can compare
+  them against a single `DELAY_THRESHOLD_WORKING_DAYS` constant — *working*
+  days (Mon–Fri), because that is how the e-Factura reporting deadline is
+  written; public holidays are deliberately not modelled (a soft warning does
+  not justify a legal-holiday calendar that must track law changes). The
+  migration is the additive `ALTER TABLE` described in §3.
 
 The companion is deliberately not a second way to *do* anything — it observes,
 it configures, and it delegates every mutation to the CLI. That keeps the
@@ -435,7 +438,7 @@ minimum size holds regardless of what was stored. Tests point `QSettings` at a
 throwaway ini file so the suite never touches the real per-user store.
 
 **Dates read the way Romanians write them: `zz.ll.aaaa`.** Every operator-facing
-date in the companion — the catalog's Data column, the details pane, the delay
+date in the companion — the catalog's Emisă and Încărcată columns, the details pane, the delay
 and failure panels, the custom-period fields (`QDateEdit` with
 `displayFormat("dd.MM.yyyy")`) — renders as `18.07.2026`. The abbreviated form
 the design started from, `18 iul.`, is shorter but drops the year in an archive

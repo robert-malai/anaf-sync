@@ -119,7 +119,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
 </section>
 
 <section id="1b" style="display:flex;flex-direction:column;gap:16px">
-  <div style="display:flex;align-items:center;gap:10px"><a href="#1b" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1b</a><span style="color:var(--muted);font-size:12px">Fereastra Facturi — <strong>fereastră proprie</strong>, fără bară laterală: Setări (1c) se deschide separat, din meniul tray sau din butonul din bara de sus (rândurile și filtrele sunt clicabile · <strong>coloane redimensionabile</strong>: trageți de separatorul din antet — Data, Număr, Direcție și Total au lățime fixă, Partener absoarbe restul · <strong>fereastră redimensionabilă</strong>: trageți de colțul din dreapta-jos; panoul de detalii rămâne ancorat; 980×620 e minimul, iar dimensiunea și lățimile coloanelor se rețin între porniri)</span></div>
+  <div style="display:flex;align-items:center;gap:10px"><a href="#1b" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:2px 7px;text-decoration:none">1b</a><span style="color:var(--muted);font-size:12px">Fereastra Facturi — <strong>fereastră proprie</strong>, fără bară laterală: Setări (1c) se deschide separat, din meniul tray sau din butonul din bara de sus (rândurile și filtrele sunt clicabile · <strong>coloane redimensionabile</strong>: trageți de separatorul din antet — Emisă, Încărcată, Număr, Direcție și Total au lățime fixă, Partener absoarbe restul · <strong>fereastră redimensionabilă</strong>: trageți de colțul din dreapta-jos; panoul de detalii rămâne ancorat; 980×620 e minimul, iar dimensiunea și lățimile coloanelor se rețin între porniri)</span></div>
   <div data-screen-label="Facturi" style="width:980px;height:620px;min-width:980px;min-height:620px;resize:both;background:var(--win);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
     <div style="flex:none;height:38px;display:flex;align-items:center;padding:0 14px;gap:7px;border-bottom:1px solid var(--border);background:var(--panel)">
       <span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span><span style="width:11px;height:11px;border-radius:50%;background:var(--border2)"></span>
@@ -172,7 +172,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
           </sc-if>
         </div>
         <div style="{{headStyle}}">
-          <sc-for list="{{cols}}" as="c" hint-placeholder-count="5">
+          <sc-for list="{{cols}}" as="c" hint-placeholder-count="6">
             <div style="{{c.style}}">{{c.label}}<span onPointerDown="{{c.down}}" onPointerMove="{{c.move}}" onPointerUp="{{c.up}}" title="{{c.title}}" style="{{c.grip}}" style-hover="border-right-color:var(--accent)"></span></div>
           </sc-for>
         </div>
@@ -180,6 +180,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
           <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
             <div onClick="{{r.pick}}" style="{{r.style}}" style-hover="background:var(--hover)">
               <div style="{{r.dataStyle}}">{{r.data}}</div>
+              <div style="{{r.upStyle}}">{{r.incarcata}}</div>
               <div style="font-variant-numeric:tabular-nums">{{r.numar}}</div>
               <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.partener}}</div>
               <div><span style="{{r.pill}}">{{r.dir}}</span></div>
@@ -415,7 +416,7 @@ a{color:#33658A;}a:hover{color:#264d69;}
   &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;default&quot;: &quot;light&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Aspect&quot;},
   &quot;templateError&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Setări — stare șablon&quot;},
   &quot;variablePanel&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Setări — panou variabile&quot;},
-  &quot;delayLimit&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 5, &quot;min&quot;: 1, &quot;max&quot;: 30, &quot;unit&quot;: &quot;zile&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Facturi — prag întârziere&quot;}
+  &quot;delayLimit&quot;: {&quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 5, &quot;min&quot;: 1, &quot;max&quot;: 30, &quot;unit&quot;: &quot;zile lucrătoare&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Facturi — prag întârziere&quot;}
 }">
 class Component extends DCLogic {
   state = { sel: "m1", filter: "Toate", period: "Luna curentă", from: "2026-07-01", to: "2026-07-20", calOpen: false, calPhase: 0, tpl: null, dirOpt: "Primite", lookback: 60,
@@ -424,7 +425,7 @@ class Component extends DCLogic {
     freq: "La fiecare 6 ore",
     // Table column widths (px). Partener is the stretch section and has no
     // width of its own — it absorbs whatever the fixed sections give up.
-    colw: { data: 84, numar: 88, dir: 76, total: 96 }, drag: null };
+    colw: { emisa: 84, up: 84, numar: 88, dir: 76, total: 96 }, drag: null };
 
   componentDidUpdate(prev) {
     if (prev.templateError !== this.props.templateError) this.setState({ tpl: null });
@@ -444,11 +445,24 @@ class Component extends DCLogic {
       { id: "m1", iso: "2026-07-18", up: "2026-07-18", numar: "FCT-2107", partener: "ELECTROMONTAJ CARPAȚI S.R.L.", dir: "primită", total: "4.821,50 RON", cif: "14338501", msg: "3216489021", tip: "FACTURA PRIMITA", arhivat: "18.07.2026, 06:04", path: "~/Facturi/12345678/received/2026/07/2026-07-18_FCT-2107_ELECTROMONTAJ CARPAȚI S.R.L." },
       { id: "m2", iso: "2026-07-17", up: "2026-07-17", numar: "2026-0713", partener: "DISTRIGAZ VEST S.A.", dir: "primită", total: "1.245,00 RON", cif: "11694562", msg: "3215877403", tip: "FACTURA PRIMITA", arhivat: "17.07.2026, 12:02", path: "~/Facturi/12345678/received/2026/07/2026-07-17_2026-0713_DISTRIGAZ VEST S.A." },
       { id: "m3", iso: "2026-07-15", up: "2026-07-16", numar: "AS-1042", partener: "MOBILA PRODEX S.R.L.", dir: "trimisă", total: "12.400,00 RON", cif: "22518743", msg: "3214300158", tip: "FACTURA TRIMISA", arhivat: "15.07.2026, 18:01", path: "~/Facturi/12345678/sent/2026/07/2026-07-15_AS-1042_MOBILA PRODEX S.R.L." },
-      { id: "m4", iso: "2026-07-11", up: "2026-07-19", numar: "FF-88214", partener: "BIROTICA PLUS S.R.L.", dir: "primită", total: "386,75 RON", cif: "31274865", msg: "3212094711", tip: "FACTURA PRIMITA", arhivat: "19.07.2026, 06:03", path: "~/Facturi/12345678/received/2026/07/2026-07-11_FF-88214_BIROTICA PLUS S.R.L." },
+      { id: "m4", iso: "2026-07-11", up: "2026-07-20", numar: "FF-88214", partener: "BIROTICA PLUS S.R.L.", dir: "primită", total: "386,75 RON", cif: "31274865", msg: "3212094711", tip: "FACTURA PRIMITA", arhivat: "20.07.2026, 06:03", path: "~/Facturi/12345678/received/2026/07/2026-07-11_FF-88214_BIROTICA PLUS S.R.L." },
       { id: "m5", iso: "2026-07-03", up: "2026-07-06", numar: "FCT-1001", partener: "ACME CONSTRUCT S.R.L.", dir: "primită", total: "2.480,00 RON", cif: "18293401", msg: "3204118867", tip: "FACTURA PRIMITA", arhivat: "06.07.2026, 06:02", path: "~/Facturi/12345678/received/2026/07/2026-07-03_FCT-1001_ACME CONSTRUCT S.R.L." },
     ];
     const delayLimit = this.props.delayLimit ?? 5;
-    const delayOf = (i) => (i.up && i.iso) ? Math.round((new Date(i.up) - new Date(i.iso)) / 86400000) : 0;
+    // Working days (Mon–Fri) in (issue, upload] — weekends excluded, public
+    // holidays deliberately not (see README §Delayed invoices).
+    const workingDays = (fromIso, toIso) => {
+      let n = 0;
+      const day = new Date(fromIso + "T00:00:00");
+      const end = new Date(toIso + "T00:00:00");
+      while (day < end) {
+        day.setDate(day.getDate() + 1);
+        const w = day.getDay();
+        if (w !== 0 && w !== 6) n++;
+      }
+      return n;
+    };
+    const delayOf = (i) => (i.up && i.iso) ? workingDays(i.iso, i.up) : 0;
     const isLate = (i) => !i.failing && delayOf(i) > delayLimit;
     const pillFor = (dir) => {
       const base = { fontSize: "11px", fontWeight: 600, borderRadius: "9px", padding: "2px 8px", whiteSpace: "nowrap" };
@@ -521,9 +535,10 @@ class Component extends DCLogic {
     // Boundaries left of Partener grow the section on their left (sign +1),
     // boundaries right of it grow the section on their right (sign −1).
     const W = this.state.colw;
-    const gridCols = W.data + "px " + W.numar + "px minmax(90px,1fr) " + W.dir + "px " + W.total + "px";
+    const gridCols = W.emisa + "px " + W.up + "px " + W.numar + "px minmax(90px,1fr) " + W.dir + "px " + W.total + "px";
     const CELLS = [
-      { label: "Data", grip: { key: "data", name: "Data", sign: 1, min: 64, max: 200 } },
+      { label: "Emisă", grip: { key: "emisa", name: "Emisă", sign: 1, min: 64, max: 200 } },
+      { label: "Încărcată", grip: { key: "up", name: "Încărcată", sign: 1, min: 64, max: 200 } },
       { label: "Număr", grip: { key: "numar", name: "Număr", sign: 1, min: 64, max: 220 } },
       { label: "Partener", grip: { key: "dir", name: "Direcție", sign: -1, min: 62, max: 160 } },
       { label: "Direcție", grip: { key: "total", name: "Total", sign: -1, min: 74, max: 220 } },
@@ -567,9 +582,12 @@ class Component extends DCLogic {
       return {
         ...i,
         data: ro(i.iso),
+        incarcata: i.up ? ro(i.up) : "—",
         pill: pillFor(i.dir),
         pick: () => this.setState({ sel: i.id }),
-        dataStyle: { color: late ? "var(--amber)" : "var(--muted)", fontWeight: late ? 600 : 400, fontVariantNumeric: "tabular-nums" },
+        dataStyle: { color: "var(--muted)", fontVariantNumeric: "tabular-nums" },
+        // The amber highlight sits on the late fact — the upload date cell.
+        upStyle: { color: late ? "var(--amber)" : "var(--muted)", fontWeight: late ? 600 : 400, fontVariantNumeric: "tabular-nums" },
         style: {
           display: "grid", gridTemplateColumns: gridCols, gap: "8px",
           alignItems: "center", padding: "9px 14px", cursor: "default", fontSize: "13px",
@@ -595,7 +613,7 @@ class Component extends DCLogic {
     const selWithPill = { ...sel, pill: pillFor(sel.dir), emisa: ro(sel.iso), incarcata: sel.up ? ro(sel.up) : "—" };
     const selLate = isLate(sel);
     const selLateText = selLate
-      ? "Emisă " + ro(sel.iso) + " · încărcată în SPV " + ro(sel.up) + " — după " + delayOf(sel) + " zile (limita: " + delayLimit + " zile)"
+      ? "Emisă " + ro(sel.iso) + " · încărcată în SPV " + ro(sel.up) + " — după " + delayOf(sel) + " zile lucrătoare (limita: " + delayLimit + " zile lucrătoare)"
       : "";
 
     // CIF chips — free entry, validated exactly like config.py; a chip's ×

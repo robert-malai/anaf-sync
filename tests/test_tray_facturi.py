@@ -62,9 +62,9 @@ def test_delayed_role_flags_ff88214(tmp_path: Path) -> None:
         model.data(model.index(r, 0), CatalogModel.MessageIdRole): r
         for r in range(model.rowCount())
     }
-    delayed_row = by_id["3210447814"]  # issued 11, uploaded 19 → 8 days
+    delayed_row = by_id["3210447814"]  # issued Sat 11, uploaded Mon 20 → 6 wd
     assert model.data(model.index(delayed_row, 0), CatalogModel.DelayedRole) is True
-    normal_row = by_id["3210447815"]  # issued 3, uploaded 6 → 3 days
+    normal_row = by_id["3210447815"]  # issued Fri 3, uploaded Mon 6 → 1 wd
     assert model.data(model.index(normal_row, 0), CatalogModel.DelayedRole) is False
 
 
@@ -72,9 +72,23 @@ def test_money_and_pill_display(tmp_path: Path) -> None:
     model = _model(tmp_path)
     row = 1  # FCT-2107, 4821.50 RON, received
     assert (
-        model.data(model.index(row, 4), Qt.ItemDataRole.DisplayRole) == "4.821,50 RON"
+        model.data(model.index(row, 5), Qt.ItemDataRole.DisplayRole) == "4.821,50 RON"
     )
-    assert model.data(model.index(row, 3), CatalogModel.DirectionRole) == "received"
+    assert model.data(model.index(row, 4), CatalogModel.DirectionRole) == "received"
+
+
+def test_uploaded_column_renders_spv_date_and_dashes(tmp_path: Path) -> None:
+    model = _model(tmp_path)
+    by_id = {
+        model.data(model.index(r, 0), CatalogModel.MessageIdRole): r
+        for r in range(model.rowCount())
+    }
+    delayed = by_id["3210447814"]  # uploaded Monday 20 iul.
+    assert (
+        model.data(model.index(delayed, 1), Qt.ItemDataRole.DisplayRole) == "20.07.2026"
+    )
+    # The pinned failing row has no upload date until the message downloads.
+    assert model.data(model.index(0, 1), Qt.ItemDataRole.DisplayRole) == "—"
 
 
 # -- model: filters -----------------------------------------------------------
@@ -250,8 +264,8 @@ def test_partener_stretches_and_the_rest_are_user_resizable(
     header = win._table.horizontalHeader()
     # Partener is the stretch section, so every drag is a zero-sum trade and
     # the table can never exceed its viewport (DESIGN.md §10).
-    assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.Stretch
-    for col in (0, 1, 3, 4):
+    assert header.sectionResizeMode(3) == QHeaderView.ResizeMode.Stretch
+    for col in (0, 1, 2, 4, 5):
         assert header.sectionResizeMode(col) == QHeaderView.ResizeMode.Interactive
 
 
@@ -296,13 +310,15 @@ def test_fixed_columns_fit_their_widest_value_in_the_real_font(
     # The handoff's px were measured in a browser at 13px, so they are a floor:
     # a platform with wider metrics must still not clip a date or a total.
     from anaf_sync.tray.delegates import PAD_EDGE, PAD_X
-    from anaf_sync.tray.window import _COL_SAMPLES
+    from anaf_sync.tray.window import _COL_SAMPLES, _LAST_COL
 
     win = MainWindow(state_path=tmp_path / "state.db")
     qtbot.addWidget(win)
     metrics = win._table.fontMetrics()
     for col, sample in _COL_SAMPLES.items():
-        padding = (PAD_EDGE if col == 0 else PAD_X) + (PAD_EDGE if col == 4 else PAD_X)
+        padding = (PAD_EDGE if col == 0 else PAD_X) + (
+            PAD_EDGE if col == _LAST_COL else PAD_X
+        )
         assert win._table.columnWidth(col) >= (
             metrics.horizontalAdvance(sample) + padding
         )

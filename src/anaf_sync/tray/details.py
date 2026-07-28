@@ -22,7 +22,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..health import DELAY_THRESHOLD_DAYS, is_delayed, upload_delay_days
+from ..health import (
+    DELAY_THRESHOLD_WORKING_DAYS,
+    is_delayed,
+    upload_delay_working_days,
+)
 from ..state import CatalogEntry
 from ..template import artifact_path as _artifact_path
 from . import format as fmt
@@ -124,10 +128,12 @@ class DetailsPane(QWidget):
     # -- panels ---------------------------------------------------------------
 
     def _delayed_panel(self, entry: CatalogEntry) -> QWidget:
-        delay = upload_delay_days(entry.issue_date, entry.created_at)
+        delay = upload_delay_working_days(entry.issue_date, entry.created_at)
         assert delay is not None  # the is_delayed gate implies both dates exist
-        after = fmt.noun(delay, "zi", "zile")
-        limit = fmt.noun(DELAY_THRESHOLD_DAYS, "zi", "zile")
+        after = fmt.noun(delay, "zi lucrătoare", "zile lucrătoare")
+        limit = fmt.noun(
+            DELAY_THRESHOLD_WORKING_DAYS, "zi lucrătoare", "zile lucrătoare"
+        )
         body = (
             f"Emisă {fmt.short_date(entry.issue_date)} · încărcată în SPV "
             f"{fmt.short_date(_spv_date(entry))} — după {after} (limita: {limit})"

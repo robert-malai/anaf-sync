@@ -2,7 +2,8 @@
 
 One builder, ``seed_sample_archive``, produces exactly the six rows the mockup
 shows (`#1b`): a failing message pinned on top, an amber delayed invoice
-(FF-88214, issued 11 iul., uploaded 19 iul. → 8 days), and four normal rows.
+(FF-88214, issued Saturday 11 iul., uploaded Monday 20 iul. → 6 working days),
+and four normal rows.
 """
 
 from __future__ import annotations
@@ -78,7 +79,8 @@ def seed_sample_archive(path: Path) -> None:
                 total=12400.00,
             )
         )
-        # Delayed: issued 11 iul., uploaded 19 iul. → 8 days (> 5 threshold).
+        # Delayed: issued Saturday 11 iul., uploaded Monday 20 iul. →
+        # 6 working days (> the 5-working-day threshold).
         archive.record(
             _entry(
                 "3210447814",
@@ -86,7 +88,7 @@ def seed_sample_archive(path: Path) -> None:
                 number="FF-88214",
                 partner="BIROTICA PLUS S.R.L.",
                 issue=dt.date(2026, 7, 11),
-                created=dt.datetime(2026, 7, 19, 9, 0),
+                created=dt.datetime(2026, 7, 20, 9, 0),
                 total=386.75,
             )
         )

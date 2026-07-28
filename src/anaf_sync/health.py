@@ -17,22 +17,23 @@ from typing import Literal
 from .state import FailureRecord, RunRecord
 
 __all__ = [
-    "DELAY_THRESHOLD_DAYS",
+    "DELAY_THRESHOLD_WORKING_DAYS",
     "Health",
     "days_until_purge",
     "derive_health",
     "is_delayed",
-    "upload_delay_days",
+    "upload_delay_working_days",
 ]
 
 #: How long ANAF retains an e-Factura message before purging it from SPV.
 PURGE_WINDOW_DAYS = 60
 
-#: An invoice uploaded to SPV more than this many days after its issue date is
-#: flagged as *declarată cu întârziere* (delayed). A single constant for now;
-#: promoting it to a config key is parked until asked (see the plan's open
-#: questions).
-DELAY_THRESHOLD_DAYS = 5
+#: An invoice uploaded to SPV more than this many *working days* after its
+#: issue date is flagged as *declarată cu întârziere* (delayed) — the
+#: e-Factura reporting deadline is five working days from issue. A single
+#: constant for now; promoting it to a config key is parked until asked (see
+#: the plan's open questions).
+DELAY_THRESHOLD_WORKING_DAYS = 5
 
 #: Last-run ``error_kind`` values that mean the sync itself is broken (bad
 #: credentials or configuration), not merely that some downloads failed.
@@ -59,25 +60,51 @@ def days_until_purge(failure: FailureRecord, now: dt.datetime) -> int:
     return (purge - _as_utc(now)).days
 
 
-def upload_delay_days(issue: dt.date | None, created: dt.datetime | None) -> int | None:
-    """Whole days between issue date and SPV upload; ``None`` if either is missing.
+def _working_days_after(start: dt.date, end: dt.date) -> int:
+    """Working days (Mon–Fri) in the half-open interval ``(start, end]``.
 
-    Compare against :data:`DELAY_THRESHOLD_DAYS` to decide whether a row is
-    *delayed* — or use :func:`is_delayed`, which does exactly that.
+    Every run of 7 consecutive days holds exactly 5 weekdays, so only the
+    sub-week remainder needs a walk. Requires ``start <= end``.
+    """
+    full_weeks, remainder = divmod((end - start).days, 7)
+    tail_start = start + dt.timedelta(days=full_weeks * 7)
+    extra = sum(
+        1
+        for offset in range(1, remainder + 1)
+        if (tail_start + dt.timedelta(days=offset)).weekday() < 5
+    )
+    return full_weeks * 5 + extra
+
+
+def upload_delay_working_days(
+    issue: dt.date | None, created: dt.datetime | None
+) -> int | None:
+    """Working days between issue date and SPV upload; ``None`` if either is missing.
+
+    Counts Mon–Fri days in ``(issue, upload]``, so an invoice issued on a
+    Saturday starts its clock on Monday by construction. Romanian public
+    holidays are deliberately *not* excluded: the flag this feeds is a soft
+    warning, and a rare false amber costs less than a legal-holiday calendar
+    that must track law changes. Compare against
+    :data:`DELAY_THRESHOLD_WORKING_DAYS` to decide whether a row is *delayed*
+    — or use :func:`is_delayed`, which does exactly that.
     """
     if issue is None or created is None:
         return None
-    return (created.date() - issue).days
+    uploaded = created.date()
+    if uploaded < issue:
+        return -_working_days_after(uploaded, issue)
+    return _working_days_after(issue, uploaded)
 
 
 def is_delayed(issue: dt.date | None, created: dt.datetime | None) -> bool:
-    """Whether an invoice was uploaded past the delay threshold.
+    """Whether an invoice was uploaded past the working-day delay threshold.
 
     ``False`` when either date is unknown — a row can only be flagged
     *declarată cu întârziere* on evidence.
     """
-    delay = upload_delay_days(issue, created)
-    return delay is not None and delay > DELAY_THRESHOLD_DAYS
+    delay = upload_delay_working_days(issue, created)
+    return delay is not None and delay > DELAY_THRESHOLD_WORKING_DAYS
 
 
 @dataclasses.dataclass(frozen=True)

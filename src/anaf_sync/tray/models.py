@@ -71,7 +71,10 @@ class CatalogModel(QAbstractTableModel):
     MessageIdRole = int(Qt.ItemDataRole.UserRole) + 3
     DirectionRole = int(Qt.ItemDataRole.UserRole) + 4
 
-    _COLUMNS = ("Data", "Număr", "Partener", "Direcție", "Total")
+    #: Emisă = issue date; Încărcată = SPV upload (``created_at``, em-dash on
+    #: backfilled rows). Rows arrive issue-date-descending straight from
+    #: :meth:`Archive.catalog` — the model never re-sorts.
+    _COLUMNS = ("Emisă", "Încărcată", "Număr", "Partener", "Direcție", "Total")
 
     def __init__(
         self,
@@ -230,12 +233,13 @@ class CatalogModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return (
                 short_date(entry.issue_date),
+                short_date(entry.created_at.date() if entry.created_at else None),
                 entry.number or EM_DASH,
                 entry.partner_name or EM_DASH,
                 "",  # direction is painted as a pill by the delegate
                 money(entry.total, entry.currency),
             )[col]
-        if role == Qt.ItemDataRole.TextAlignmentRole and col == 4:
+        if role == Qt.ItemDataRole.TextAlignmentRole and col == 5:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == self.DirectionRole:
             return entry.direction
@@ -251,8 +255,9 @@ class CatalogModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return (
                 short_date(row.record.first_failed_at.date()),
+                EM_DASH,  # upload date and partner stay unknown until the
+                EM_DASH,  # message downloads
                 EM_DASH,
-                EM_DASH,  # partner unknown until the message downloads
                 "",
                 EM_DASH,
             )[col]
