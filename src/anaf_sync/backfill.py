@@ -29,7 +29,7 @@ from anafpy.efactura import DownloadedMessage
 from pydantic import BaseModel, Field
 
 from .config import Artifact, SyncConfig
-from .context import own_side, project_document
+from .context import own_side, project_document, read_view
 from .state import Archive, CatalogEntry
 from .template import artifact_path
 
@@ -55,8 +55,13 @@ class BackfillReport(BaseModel):
     indexed: int = 0
     #: Already in the catalog under this path — a synced row, or a prior run.
     already_known: int = 0
-    #: Not a readable UBL invoice (a ``nok`` errors file, a buyer message).
+    #: Not a UBL invoice at all (a ``nok`` errors file, a buyer message).
     not_ubl: int = 0
+    #: Parseable UBL that anafpy's reader refused — the vendored CIUS-RO edition
+    #: has drifted. Counted apart from :attr:`not_ubl` because the two call for
+    #: opposite responses: one is a file that was never an invoice, the other an
+    #: invoice this build cannot read, and reporting them as one hides the bug.
+    unreadable: int = 0
     #: Neither party is a configured CIF — someone else's invoice.
     foreign: int = 0
     failures: list[tuple[str, str]] = Field(default_factory=list)  # (path, error)
@@ -103,6 +108,7 @@ def run_backfill(
         scanned=report.scanned,
         indexed=report.indexed,
         already_known=report.already_known,
+        unreadable=report.unreadable,
     )
     return report
 
@@ -122,9 +128,13 @@ def _index_one(
     base = path.with_name(path.name[: -len(".zip")])
 
     message = DownloadedMessage.from_zip(path.read_bytes())
-    view = message.view
+    view = read_view(message)
     if view is None or message.content_xml is None:
-        report.not_ubl += 1
+        if (error := message.view_error) is not None:
+            report.unreadable += 1
+            logger.warning("view_unreadable", path=str(path), error=str(error))
+        else:
+            report.not_ubl += 1
         return
     side = own_side(view, config.cifs)
     if side is None:

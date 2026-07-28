@@ -188,6 +188,33 @@ def test_non_ubl_zips_are_counted_not_failed(tmp_path: Path) -> None:
     assert report.ok  # nothing actionable — the run must not exit non-zero
 
 
+def test_unreadable_ubl_is_counted_apart_from_non_ubl(
+    tmp_path: Path, recwarn: pytest.WarningsRecorder
+) -> None:
+    """Parseable UBL the reader refuses is drift, not "never was an invoice".
+
+    Since anafpy 0.7.0 the reader is lenient about everything ANAF tolerates, so
+    a refusal means one narrow thing — a closed code list has moved under us.
+    Collapsing it into ``not_ubl`` would report a readable invoice we dropped as
+    a file that never held one.
+    """
+    legacy = tmp_path / "vechi"
+    # A unit code off UN/ECE Rec 20 — the shape of a drifted vendored list.
+    _write_zip(
+        legacy / "derivata",
+        _invoice_xml().replace(b'unitCode="H87"', b'unitCode="ZZZ"', 1),
+    )
+    state = Archive.open(tmp_path / "state.db")
+
+    report = run_backfill(legacy, _config(tmp_path), state)
+
+    assert (report.unreadable, report.not_ubl, report.indexed) == (1, 0, 0)
+    assert report.ok  # still nothing the operator can act on this run
+    # anafpy's UserWarning must not escape to stderr: it would bypass the sink
+    # `logsink` chose, and the run already logs the same failure through it.
+    assert [w for w in recwarn if issubclass(w.category, UserWarning)] == []
+
+
 def test_rerun_updates_rather_than_duplicates(tmp_path: Path) -> None:
     """Identity is the document's own digest, so a second pass is idempotent."""
     legacy = tmp_path / "vechi"

@@ -363,6 +363,14 @@ def backfill(
         f"already known {report.already_known} | "
         f"not an invoice {report.not_ubl} | other CIF {report.foreign}"
     )
+    # Conditional on purpose: this one should read zero forever, so it earns a
+    # line only by being non-zero — and then it is a bug report, not a tally.
+    if report.unreadable:
+        print(
+            f"unreadable {report.unreadable} — valid invoices this build cannot "
+            f"read; please report them (anafpy's CIUS-RO rules have drifted)",
+            file=sys.stderr,
+        )
     if not report.ok:
         for path, error in report.failures:
             print(f"failed {path}: {error}", file=sys.stderr)

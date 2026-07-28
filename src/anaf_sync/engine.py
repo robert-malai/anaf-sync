@@ -32,7 +32,7 @@ from tenacity import (
 )
 
 from .config import Artifact, Direction, SyncConfig
-from .context import direction_of, project_message
+from .context import direction_of, project_message, read_view
 from .state import Archive, CatalogEntry
 from .template import PathTemplate, artifact_path
 
@@ -223,7 +223,7 @@ async def _archive_message(
     direction = direction_of(item)
     assert direction is not None  # non-invoice messages are filtered upstream
     message = await _download_with_retry(client, item.id)
-    projection = project_message(item, message.view, cif=cif)
+    projection = project_message(item, _read_view(message, item.id), cif=cif)
     base = state.claim_base(
         config.output.resolved_directory / Path(template.render(projection.context)),
         item.id,
@@ -245,6 +245,21 @@ async def _archive_message(
         artifacts=written,
         **projection.catalog,
     )
+
+
+def _read_view(message: DownloadedMessage, message_id: str) -> InvoiceDocument | None:
+    """The flat invoice view, reporting rule drift through our own log sink.
+
+    A ``None`` view is routine for content that is not a UBL invoice at all
+    (``nok`` error files, buyer messages); the template renders those fields as
+    ``unknown`` by design. On *parseable* UBL it is not routine, and it is
+    invisible from the archive's side: the document still lands, just with every
+    XML-derived path variable collapsed to ``unknown``. Say so.
+    """
+    view = read_view(message)
+    if view is None and (error := message.view_error) is not None:
+        logger.warning("view_unreadable", message_id=message_id, error=str(error))
+    return view
 
 
 async def _write_artifact(
@@ -311,7 +326,10 @@ async def _write_pdf(
     # The document already passed validation at filing; skip re-validation.
     body = await public.render_invoice_pdf(
         message.content_xml,
-        standard=_transform_standard(message.view),
+        # `read_view`, not `.view`: the cached value either way, since
+        # `_archive_message` read it first — but not depending on that ordering
+        # to keep anafpy's warning off stderr.
+        standard=_transform_standard(read_view(message)),
         validate=False,
     )
     if not body.startswith(b"%PDF"):

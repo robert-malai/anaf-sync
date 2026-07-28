@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import warnings
 from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
-from anafpy.efactura import MessageListItem
+from anafpy.efactura import DownloadedMessage, MessageListItem
 from anafpy.efactura.authoring import InvoiceDocument, Party
 
 __all__ = [
@@ -29,7 +30,32 @@ __all__ = [
     "own_side",
     "project_document",
     "project_message",
+    "read_view",
 ]
+
+
+def read_view(message: DownloadedMessage) -> InvoiceDocument | None:
+    """The flat invoice view of a downloaded message, without the warning.
+
+    anafpy reports an unreadable view twice: on ``message.view_error`` and as a
+    ``UserWarning``. The warning is swallowed here because it would reach
+    stderr, bypassing whichever sink :mod:`logsink` picked, and split one
+    failure across two channels on exactly the scheduled runs nobody is
+    watching. Callers log it themselves from ``view_error``, which outlives this
+    call.
+
+    The distinction that error draws is the point: ``None`` with no error is
+    content that is not a UBL invoice at all (a ``nok`` errors file, a buyer
+    message), which both callers expect and handle. ``None`` *with* one means
+    anafpy's reader — lenient about everything ANAF tolerates since 0.7.0 —
+    could not read a document ANAF accepted, i.e. the vendored CIUS-RO edition
+    has drifted. Shared so a backfilled document and a synced one can never
+    disagree about which of the two they are.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return message.view
+
 
 #: "received" | "sent" — narrow alias for readability. Deliberately not the
 #: config.Direction enum: that one is the *filter* the user configures (and

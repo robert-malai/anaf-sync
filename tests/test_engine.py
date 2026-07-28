@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, cast
 
+import structlog
 from anafpy.efactura import (
     DownloadedMessage,
     EFacturaClient,
@@ -364,6 +365,54 @@ async def test_dotted_partner_name_keeps_its_last_segment(tmp_path: Path) -> Non
     # the same base the artifacts were appended to, dots and all.
     base_path = _row(tmp_path / "state.db", "m1")["base_path"]
     assert base_path.endswith("111/Miele Appliances S.R.L")
+
+
+async def test_an_unreadable_view_is_logged_not_silently_archived(
+    tmp_path: Path,
+) -> None:
+    """A document that lands with every field blank must say why.
+
+    anafpy 0.7.0's reader is lenient about everything ANAF tolerates, so a
+    refusal on parseable UBL means the vendored CIUS-RO rules have drifted. The
+    archive still takes the document — the signed ZIP is what matters, and
+    dropping it would be worse — but every XML-derived path variable collapses
+    to ``unknown``, which is indistinguishable from a buyer message unless the
+    run says so. This is the regression behind anafpy#9, where 85 real invoices
+    were archived as ``unknown_unknown_unknown`` with nothing in the log.
+    """
+    state = Archive.open(tmp_path / "state.db")
+
+    class DriftedClient(FakeClient):
+        async def download(self, message_id: str) -> DownloadedMessage:
+            message = DownloadedMessage.from_zip(_zip_bytes())
+            # What anafpy leaves behind when the UBL parses but will not read.
+            message.__dict__["view"] = None
+            message._view_error = ValueError("'ZZZ' is not on the unit code list")
+            return message
+
+    with structlog.testing.capture_logs() as logs:
+        report = await _run(DriftedClient(_items()), _config(tmp_path), state)
+
+    assert report.downloaded == 1  # archived anyway — the signed ZIP is the point
+    drift = [entry for entry in logs if entry["event"] == "view_unreadable"]
+    assert len(drift) == 1
+    assert drift[0]["message_id"] == "m1"
+    assert "ZZZ" in drift[0]["error"]
+
+
+async def test_a_non_ubl_message_does_not_report_drift(tmp_path: Path) -> None:
+    """The quiet half of the same distinction.
+
+    A ``nok`` errors file or a buyer message has no view and never had one. That
+    is routine, and warning about it would train the operator to ignore the
+    warning that matters.
+    """
+    state = Archive.open(tmp_path / "state.db")
+
+    with structlog.testing.capture_logs() as logs:
+        await _run(FakeClient(_items()), _config(tmp_path), state)
+
+    assert [entry for entry in logs if entry["event"] == "view_unreadable"] == []
 
 
 async def test_catalog_fields_land_in_the_db(tmp_path: Path) -> None:
