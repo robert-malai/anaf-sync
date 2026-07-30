@@ -30,6 +30,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
+from collections.abc import Collection
 from pathlib import Path
 from typing import Literal, Self
 
@@ -295,6 +296,85 @@ class Archive:
             " WHERE source = 'sync' AND artifacts NOT LIKE '%\"pdf\"%'"
         ).fetchall()
         return [_entry_from_row(row) for row in rows]
+
+    def synced(
+        self, *, message_ids: Collection[str] | None = None
+    ) -> list[CatalogEntry]:
+        """Every downloaded row — the reprocess pass's worklist.
+
+        Backfill rows are excluded for the same reason :meth:`missing_pdf`
+        excludes them: they catalog folders the engine does not own, so
+        re-deriving their paths and moving their files is not this tool's call.
+        Ordered by ``base_path`` so a pass that relocates files walks the
+        archive folder by folder rather than criss-crossing it.
+
+        ``message_ids`` narrows the worklist to those messages — one row is what
+        the tray's per-invoice button asks for, and filtering in SQL keeps that
+        a single-row read on an archive of any size. Ids that are absent (or
+        name a backfill row) simply do not come back; the caller decides whether
+        that is worth reporting.
+        """
+        if message_ids is None:
+            rows = self._conn.execute(
+                "SELECT * FROM messages WHERE source = 'sync' ORDER BY base_path"
+            ).fetchall()
+        elif not message_ids:
+            return []
+        else:
+            slots = ", ".join("?" * len(message_ids))
+            rows = self._conn.execute(
+                f"SELECT * FROM messages WHERE source = 'sync' "
+                f"AND message_id IN ({slots}) ORDER BY base_path",
+                tuple(message_ids),
+            ).fetchall()
+        return [_entry_from_row(row) for row in rows]
+
+    def reproject(self, entry: CatalogEntry) -> None:
+        """Rewrite one row from a re-derived projection; ``saved_at`` is kept.
+
+        Everything :meth:`record` writes except that stamp: nothing was
+        downloaded, so the row must go on naming the run that archived it — and
+        for the same reason no failure trace is cleared, since this pass never
+        asked ANAF anything. ``entry`` is the row's intended full state, merge
+        included: the caller decides what a re-projection may overwrite and
+        what only the (long gone) listing entry could have known.
+
+        An unknown ``message_id`` is a no-op, so an interrupted pass re-runs.
+        """
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE messages SET
+                    cif          = ?,
+                    direction    = ?,
+                    base_path    = ?,
+                    artifacts    = ?,
+                    issue_date   = ?,
+                    number       = ?,
+                    partner_name = ?,
+                    partner_cif  = ?,
+                    total        = ?,
+                    currency     = ?,
+                    message_type = ?,
+                    created_at   = ?
+                WHERE message_id = ?
+                """,
+                (
+                    entry.cif,
+                    entry.direction,
+                    entry.base_path,
+                    json.dumps(entry.artifacts),
+                    entry.issue_date.isoformat() if entry.issue_date else None,
+                    entry.number,
+                    entry.partner_name,
+                    entry.partner_cif,
+                    entry.total,
+                    entry.currency,
+                    entry.message_type,
+                    entry.created_at.isoformat() if entry.created_at else None,
+                    entry.message_id,
+                ),
+            )
 
     def add_artifact(self, message_id: str, artifact: str) -> None:
         """Append one artifact to a recorded message (a repaired PDF, say).

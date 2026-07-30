@@ -28,7 +28,7 @@ import structlog
 from anafpy.efactura import DownloadedMessage
 from pydantic import BaseModel, Field
 
-from .config import Artifact, SyncConfig
+from .config import ARTIFACT_SUFFIXES, SyncConfig
 from .context import own_side, project_document, read_view
 from .state import Archive, CatalogEntry
 from .template import artifact_path
@@ -36,16 +36,6 @@ from .template import artifact_path
 __all__ = ["BackfillReport", "run_backfill"]
 
 logger = structlog.get_logger(__name__)
-
-#: Which sibling file each artifact would have been written as. Mirrors
-#: ``engine._write_artifact``; used only to record what is *actually* on disk.
-_ARTIFACT_SUFFIXES: dict[Artifact, str] = {
-    Artifact.ZIP: ".zip",
-    Artifact.XML: ".xml",
-    Artifact.SIGNATURE: "_semnatura.xml",
-    Artifact.PDF: ".pdf",
-    Artifact.METADATA: ".json",
-}
 
 
 class BackfillReport(BaseModel):
@@ -177,6 +167,6 @@ def _artifacts_on_disk(base: Path) -> list[str]:
     configured, matching how the engine records them."""
     return [
         artifact.value
-        for artifact, suffix in _ARTIFACT_SUFFIXES.items()
+        for artifact, suffix in ARTIFACT_SUFFIXES.items()
         if artifact_path(base, suffix).exists()
     ]

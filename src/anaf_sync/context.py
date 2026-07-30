@@ -9,6 +9,9 @@ The listing entry is *usually* present but not always: ``backfill`` reads
 documents straight off disk, long after ANAF stopped listing them. Those go
 through :func:`project_document`, which shares this module's single parse so a
 backfilled row and a synced one can never disagree on how a field is derived.
+:func:`project_archived` is the third door onto the same parse — a message
+already in the catalog, re-read from its own files — and it carries the listing
+facts the archive kept when the listing itself went away.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ __all__ = [
     "Projection",
     "direction_of",
     "own_side",
+    "project_archived",
     "project_document",
     "project_message",
     "read_view",
@@ -245,6 +249,24 @@ def _project(
 
 
 @dataclasses.dataclass(frozen=True)
+class _Listing:
+    """What only ANAF's message listing ever carries.
+
+    None of it lives in the invoice document, so how much is available depends
+    on which door onto the parse was used: :func:`project_message` fills it from
+    the listing entry in hand, :func:`project_document` (backfill) has none of
+    it, and :func:`project_archived` recovers everything the catalog kept —
+    everything but ``request_id``, which no artifact records.
+    """
+
+    message_id: str | None = None
+    request_id: str | None = None
+    message_type: str | None = None
+    #: ANAF's ``data_creare``, already parsed (see :func:`_parse_created`).
+    created: dt.datetime | None = None
+
+
+@dataclasses.dataclass(frozen=True)
 class Projection:
     """The two derived views of one message, from a single parse."""
 
@@ -281,7 +303,16 @@ def project_message(
         view: the parsed flat invoice, when the content was readable UBL.
         cif: the CIF this sync run queried (the "own" company).
     """
-    return _assemble(_project(item, view, direction=direction_of(item)), item, cif=cif)
+    return _assemble(
+        _project(item, view, direction=direction_of(item)),
+        _Listing(
+            message_id=item.id,
+            request_id=item.request_id,
+            message_type=item.message_type,
+            created=_parse_created(item.created_at),
+        ),
+        cif=cif,
+    )
 
 
 def project_document(
@@ -303,16 +334,50 @@ def project_document(
         cif: the operator's own CIF for this document (see :func:`own_side`).
         direction: which side of it the operator is on (see :func:`own_side`).
     """
-    return _assemble(_project(None, view, direction=direction), None, cif=cif)
+    return _assemble(_project(None, view, direction=direction), _Listing(), cif=cif)
 
 
-def _assemble(inv: _Invoice, item: MessageListItem | None, *, cif: str) -> Projection:
+def project_archived(
+    view: InvoiceDocument,
+    *,
+    cif: str,
+    direction: DirectionLabel,
+    message_id: str,
+    message_type: str | None = None,
+    created: dt.datetime | None = None,
+) -> Projection:
+    """Re-project a message already in the catalog, from its own stored files.
+
+    The reprocess counterpart to :func:`project_message`: same parse, same
+    layout, but the listing entry it was first projected from is long gone, so
+    the facts only that entry carried come back from the catalog row instead
+    (:mod:`reprocess` passes them). ``request_id`` is the exception — nothing
+    the archive writes records it, so it stays ``None`` here, and a path
+    template that references it cannot be re-rendered.
+
+    Args:
+        view: the parsed flat invoice, re-read from disk.
+        cif: the row's own CIF — the sync run's, not re-derived.
+        direction: the row's direction, classified from ANAF's ``tip`` at
+            download time and better evidence than anything derivable now.
+        message_id: ANAF's message id, straight from the row.
+        message_type: the row's ``tip``, when it has one.
+        created: the row's ``created_at`` (ANAF's ``data_creare``).
+    """
+    return _assemble(
+        _project(None, view, direction=direction),
+        _Listing(message_id=message_id, message_type=message_type, created=created),
+        cif=cif,
+    )
+
+
+def _assemble(inv: _Invoice, listing: _Listing, *, cif: str) -> Projection:
     """Lay one projected invoice out as template context + catalog columns."""
-    created = _parse_created(item.created_at) if item is not None else None
+    created = listing.created
     context = {
-        "message_id": item.id if item is not None else None,
-        "request_id": item.request_id if item is not None else None,
-        "message_type": item.message_type if item is not None else None,
+        "message_id": listing.message_id,
+        "request_id": listing.request_id,
+        "message_type": listing.message_type,
         "created": created,
         "created_month": _ro_month(created),
         "cif": _digits(cif) or cif,
@@ -333,7 +398,7 @@ def _assemble(inv: _Invoice, item: MessageListItem | None, *, cif: str) -> Proje
         "partner_cif": inv.partner_cif,
         "total": float(inv.total) if inv.total is not None else None,
         "currency": inv.currency,
-        "message_type": item.message_type if item is not None else None,
+        "message_type": listing.message_type,
         "created_at": created,
     }
     return Projection(context=context, catalog=catalog)

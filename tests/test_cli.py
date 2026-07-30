@@ -7,6 +7,7 @@ import pytest
 from anaf_sync import cli
 from anaf_sync.config import load_config, write_default_config
 from anaf_sync.engine import RepairReport, SyncReport
+from anaf_sync.reprocess import ReprocessReport
 from anaf_sync.state import Archive
 
 
@@ -224,6 +225,73 @@ async def test_render_requires_pdf_in_the_config(
 
     assert await cli.render(config=config) == 1
     assert "output.artifacts" in capsys.readouterr().err
+
+
+def _fake_reprocess(report: ReprocessReport) -> object:
+    def run(*args: object, **kwargs: object) -> ReprocessReport:
+        return report
+
+    return run
+
+
+def test_reprocess_reports_and_leaves_last_run_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    report = ReprocessReport(scanned=9, refreshed=2, moved=2, unreadable=1)
+    monkeypatch.setattr(cli, "run_reprocess", _fake_reprocess(report))
+
+    result = cli.reprocess(config=config, move=True)
+
+    assert result == 0
+    out, err = capsys.readouterr()
+    assert "scanned 9 | refreshed 2 | moved 2" in out
+    # The one line worth acting on, and only on stderr where it will be noticed.
+    assert "unreadable 1" in err
+    # `last_run` is the schedule's health record; a manual repair is not a sync.
+    assert _last_run(tmp_path) is None
+
+
+def test_reprocess_omits_the_move_column_when_not_moving(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    monkeypatch.setattr(
+        cli, "run_reprocess", _fake_reprocess(ReprocessReport(scanned=3, refreshed=1))
+    )
+
+    assert cli.reprocess(config=config) == 0
+    assert "moved" not in capsys.readouterr().out
+
+
+def test_reprocess_exits_nonzero_on_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    report = ReprocessReport(scanned=1, failures=[("m1", "permission denied")])
+    monkeypatch.setattr(cli, "run_reprocess", _fake_reprocess(report))
+
+    assert cli.reprocess(config=config) == 1
+    assert "failed m1: permission denied" in capsys.readouterr().err
+
+
+def test_reprocess_refuses_a_move_it_cannot_render(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            'template = "{cif}', 'template = "{request_id}/{cif}'
+        ),
+        encoding="utf-8",
+    )
+
+    assert cli.reprocess(config=config, move=True) == 1
+    assert "request_id" in capsys.readouterr().err
 
 
 def test_tray_status_command(

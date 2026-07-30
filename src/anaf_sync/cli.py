@@ -33,6 +33,7 @@ from .engine import SyncReport, run_repair, run_sync
 from .health import days_until_purge
 from .lock import LockHeldError, sync_lock
 from .logsink import LogMode, resolve_mode, system_log_handler
+from .reprocess import run_reprocess
 from .scheduling import ScheduleError
 from .scheduling import install as schedule_install
 from .scheduling import status as schedule_status
@@ -374,6 +375,98 @@ async def render(
     if not report.ok:
         for message_id, error in report.failures:
             print(f"failed {message_id}: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+@app.command
+def reprocess(
+    *,
+    config: ConfigOption = None,
+    message_id: Annotated[
+        list[str] | None,
+        Parameter(
+            name=["--message-id", "-m"],
+            # No `--empty-message-id` counterpart: "the whole archive" is what
+            # omitting the flag already means.
+            negative="",
+            help="Only these messages (repeatable), instead of the whole archive.",
+        ),
+    ] = None,
+    move: Annotated[
+        bool,
+        Parameter(
+            negative="",
+            help="Also re-render the path template and relocate each message's files.",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        Parameter(negative="", help="Report what would change; write nothing."),
+    ] = False,
+) -> int:
+    """Re-read the archived invoices and refresh what was derived from them.
+
+    Fixes the rows showing `unknown`: the fields are re-parsed from the stored
+    ZIPs, so a document anafpy could not read at download time is picked up by a
+    later build — offline, and with no 60-day window to beat. `--move` also
+    re-renders the path template and relocates each message's files under it,
+    which is what empties an `unknown` folder (and re-files the whole archive
+    after a template change — try `--dry-run --move` first).
+
+    `--message-id` narrows the pass to single invoices; it is what the tray's
+    per-invoice button runs.
+    """
+    config_path = _resolve_config_path(config)
+    state_path = default_state_path()
+    try:
+        cfg = load_config(config_path)
+        # The same lock `sync` takes: this rewrites catalog rows and, with
+        # --move, the very files a concurrent run would be writing beside.
+        with (
+            sync_lock(state_path.with_name("sync.lock")),
+            Archive.open(state_path) as state,
+        ):
+            report = run_reprocess(
+                cfg, state, message_ids=message_id, move=move, dry_run=dry_run
+            )
+    except (FileNotFoundError, ValueError, LockHeldError) as exc:
+        return _fail(str(exc))
+
+    # Deliberately no `_record_run` — same reasoning as `backfill` and `render`:
+    # `last_run` is the schedule's health record, and this is not a sync.
+    print(
+        f"scanned {report.scanned} | "
+        + (
+            f"would refresh {report.would_refresh}"
+            if dry_run
+            else f"refreshed {report.refreshed}"
+        )
+        + (
+            " | "
+            + (
+                f"would move {report.would_move}"
+                if dry_run
+                else f"moved {report.moved}"
+            )
+            if move
+            else ""
+        )
+        + (f" | skipped {report.skipped}" if report.skipped else "")
+        + (f" | conflicts {report.conflicts}" if report.conflicts else "")
+    )
+    # Conditional on purpose, and the one line worth acting on: these are valid
+    # invoices this build still cannot read, so they stay `unknown` until a
+    # newer anafpy lands — and then this same command finishes the job.
+    if report.unreadable:
+        print(
+            f"unreadable {report.unreadable} — still unparseable by this build; "
+            f"please report them (anafpy's CIUS-RO rules have drifted)",
+            file=sys.stderr,
+        )
+    if not report.ok:
+        for failed_id, error in report.failures:
+            print(f"failed {failed_id}: {error}", file=sys.stderr)
         return 1
     return 0
 

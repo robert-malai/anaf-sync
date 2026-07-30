@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
+    "ARTIFACT_SUFFIXES",
     "Artifact",
     "AuthSettings",
     "Direction",
@@ -97,6 +98,19 @@ class Artifact(StrEnum):
     SIGNATURE = "signature"  # the detached MF signature XML
     PDF = "pdf"  # ANAF's own PDF rendering (public transformare service)
     METADATA = "metadata"  # a small JSON sidecar with the message + summary
+
+
+#: Which sibling file each artifact is written as, next to the rendered base
+#: path. Mirrors ``engine._write_artifact``, which does the writing; readers
+#: that need to *find* an artifact already on disk (``backfill``, ``reprocess``)
+#: share this map so they cannot drift on how a file is named.
+ARTIFACT_SUFFIXES: dict[Artifact, str] = {
+    Artifact.ZIP: ".zip",
+    Artifact.XML: ".xml",
+    Artifact.SIGNATURE: "_semnatura.xml",
+    Artifact.PDF: ".pdf",
+    Artifact.METADATA: ".json",
+}
 
 
 class OutputConfig(BaseModel):

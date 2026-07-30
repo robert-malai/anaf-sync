@@ -127,6 +127,22 @@ class PathTemplate:
             raise TemplateError("the path template is empty")
         self._template = template
 
+    @property
+    def variables(self) -> frozenset[str]:
+        """Every context variable the template references.
+
+        Format specs and conversions are stripped (``{issue_date:%Y}`` →
+        ``issue_date``), as is any attribute or index tail. For callers that
+        must decide up front whether they can supply a value at all — an
+        unrenderable variable is better refused than rendered as ``unknown``
+        over a path that already holds the real thing.
+        """
+        return frozenset(
+            name.partition(".")[0].partition("[")[0]
+            for _, name, _, _ in string.Formatter().parse(self._template)
+            if name
+        )
+
     def render(self, context: Mapping[str, Any]) -> PurePosixPath:
         """Render to a relative path (POSIX-style; ``pathlib`` adapts per OS).
 

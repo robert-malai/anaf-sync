@@ -89,3 +89,14 @@ def test_escape_attempts_are_rejected() -> None:
 def test_empty_template_is_rejected() -> None:
     with pytest.raises(TemplateError, match="empty"):
         PathTemplate("  /  ")
+
+
+def test_variables_names_what_the_template_needs() -> None:
+    """Format specs, conversions and attribute tails are not part of the name."""
+    template = PathTemplate("{cif}/{issue_date:%Y}/{partner_name!t}_{number}")
+
+    assert template.variables == {"cif", "issue_date", "partner_name", "number"}
+
+
+def test_variables_of_a_literal_template() -> None:
+    assert PathTemplate("facturi/toate").variables == frozenset()
