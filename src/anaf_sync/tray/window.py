@@ -3,7 +3,8 @@
 A resizable shell (980×620 is the *minimum* — the size the view was designed
 at) over :class:`CatalogModel`, painted by :class:`CatalogDelegate`. Setări is
 a **separate window** (:mod:`settings_window`), not a page of a stack; this
-window only asks for it through :attr:`MainWindow.settings_requested`. The
+window only asks for it through :attr:`MainWindow.settings_requested`, and the
+same way it asks the tray to spawn a sync or a per-invoice reprocess. The
 layout is elastic per DESIGN.md §10: the table absorbs extra space (Partener
 is the stretch section, the other five are user-resizable), while the details
 pane and toolbar rows stay anchored. Geometry and header layout persist
@@ -94,11 +95,13 @@ class MainWindow(QMainWindow):
         *,
         state_path: Path | None = None,
         on_retry: Callable[[], None] | None = None,
+        on_reprocess: Callable[[str], None] | None = None,
         now: Callable[[], dt.datetime] | None = None,
     ) -> None:
         super().__init__()
         self._state_path = state_path or default_state_path()
         self._on_retry = on_retry
+        self._on_reprocess = on_reprocess
         self._now = now or (lambda: dt.datetime.now())  # noqa: DTZ005 — local month
         self._theme: Theme = current_theme()
 
@@ -117,6 +120,7 @@ class MainWindow(QMainWindow):
         self._model = CatalogModel(self._state_path, now=self._utc_now)
         self._details = DetailsPane()
         self._details.retry_requested.connect(self._retry)
+        self._details.reprocess_requested.connect(self._reprocess)
         self._details.open_pdf_requested.connect(self._open_pdf)
         self._details.reveal_requested.connect(reveal_in_file_manager)
 
@@ -373,6 +377,14 @@ class MainWindow(QMainWindow):
     def _retry(self) -> None:
         if self._on_retry is not None:
             self._on_retry()
+
+    def _reprocess(self, message_id: str) -> None:
+        if self._on_reprocess is not None:
+            self._on_reprocess(message_id)
+
+    def set_busy(self, busy: bool) -> None:
+        """Pass a tray-spawned command's in-flight state to the details pane."""
+        self._details.set_busy(busy)
 
     # -- theme ----------------------------------------------------------------
 

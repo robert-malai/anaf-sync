@@ -382,3 +382,142 @@ def test_fixed_columns_fit_their_widest_value_in_the_real_font(
         assert win._table.columnWidth(col) >= (
             metrics.horizontalAdvance(sample) + padding
         )
+
+
+# -- per-invoice reprocess ------------------------------------------------------
+
+
+def _unreadable_entry(**overrides: object) -> CatalogEntry:
+    """A row as an unreadable projection leaves it: no number, date or partner."""
+    fields: dict[str, object] = {
+        "message_id": "4001",
+        "cif": "12345678",
+        "direction": "received",
+        "base_path": "/archive/unknown/unknown_unknown",
+        "artifacts": ["zip"],
+        "message_type": "FACTURA PRIMITA",
+    }
+    return CatalogEntry(**{**fields, **overrides})  # type: ignore[arg-type]
+
+
+def test_unreadable_row_is_recognised_by_all_three_blanks() -> None:
+    from anaf_sync.tray.details import is_unreadable
+
+    assert is_unreadable(_unreadable_entry())
+    # One missing field alone is an ordinary invoice, not a broken projection.
+    assert not is_unreadable(
+        _unreadable_entry(number="1882", issue_date=dt.date.today())
+    )
+
+
+def test_reprocess_button_asks_for_the_selected_message(
+    qtbot: object, tmp_path: Path
+) -> None:
+    asked: list[str] = []
+    win = MainWindow(state_path=tmp_path / "state.db", on_reprocess=asked.append)
+    qtbot.addWidget(win)
+
+    win._details.show_record(_unreadable_entry())
+    win._details._reprocess_button.click()
+
+    assert asked == ["4001"]
+
+
+def test_reprocess_button_is_promoted_only_where_it_repairs(
+    qtbot: object, tmp_path: Path
+) -> None:
+    from anaf_sync.tray.details import _REPROCESS_LABEL
+
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+
+    win._details.show_record(_unreadable_entry())
+    assert win._details._reprocess_button.text() == _REPROCESS_LABEL
+    # The panel that explains the blanks — and that the invoice itself is safe.
+    assert _pane_text(win._details, "Câmpuri necitite")
+
+    win._details.show_record(
+        _unreadable_entry(number="1882", issue_date=dt.date(2026, 6, 17))
+    )
+    assert win._details._reprocess_button is not None  # still offered, quietly
+    assert not _pane_text(win._details, "Câmpuri necitite")
+
+
+def test_reprocess_is_not_offered_for_backfilled_rows(
+    qtbot: object, tmp_path: Path
+) -> None:
+    """`reprocess` excludes them by construction — an enabled button would lie."""
+    asked: list[str] = []
+    win = MainWindow(state_path=tmp_path / "state.db", on_reprocess=asked.append)
+    qtbot.addWidget(win)
+
+    win._details.show_record(
+        _unreadable_entry(message_id="backfill:abc", source="backfill")
+    )
+
+    assert win._details._reprocess_button is None  # nothing busy-state may touch
+    button = _find_button(win._details, "Recitește")
+    assert button is not None and not button.isEnabled()
+
+
+def test_busy_state_disables_the_button_and_says_so(
+    qtbot: object, tmp_path: Path
+) -> None:
+    from anaf_sync.tray.details import _REPROCESS_BUSY, _REPROCESS_LABEL
+
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+    win._details.show_record(_unreadable_entry())
+
+    win.set_busy(True)
+    assert win._details._reprocess_button.text() == _REPROCESS_BUSY
+    assert not win._details._reprocess_button.isEnabled()
+
+    # A selection change mid-run must not hand back an enabled button.
+    win._details.show_record(_unreadable_entry(message_id="4002"))
+    assert not win._details._reprocess_button.isEnabled()
+
+    win.set_busy(False)
+    assert win._details._reprocess_button.text() == _REPROCESS_LABEL
+    assert win._details._reprocess_button.isEnabled()
+
+
+def _live_widgets(pane: object) -> list[object]:
+    """Every widget currently in the pane's layout.
+
+    Not `findChildren`: the pane rebuilds through `clear_layout`, which uses
+    `deleteLater`, so the previous record's widgets are still children until the
+    event loop runs — and a test asserting a panel is *gone* would find its
+    ghost.
+    """
+    found: list[object] = []
+    stack = [pane._layout]
+    while stack:
+        layout = stack.pop()
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if (widget := item.widget()) is not None:
+                found.append(widget)
+                if (nested := widget.layout()) is not None:
+                    stack.append(nested)
+            elif (nested_layout := item.layout()) is not None:
+                stack.append(nested_layout)
+    return found
+
+
+def _find_button(pane: object, text: str) -> object:
+    from PySide6.QtWidgets import QPushButton
+
+    for widget in _live_widgets(pane):
+        if isinstance(widget, QPushButton) and text in widget.text():
+            return widget
+    return None
+
+
+def _pane_text(pane: object, needle: str) -> bool:
+    from PySide6.QtWidgets import QLabel
+
+    return any(
+        isinstance(widget, QLabel) and needle in widget.text()
+        for widget in _live_widgets(pane)
+    )

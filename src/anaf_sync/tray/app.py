@@ -32,7 +32,7 @@ from ..config import default_config_path, default_state_path
 from .icons import status_icon
 from .macos import activate as activate_app
 from .macos import hide_dock_icon
-from .runner import SyncRunner
+from .runner import CliRunner
 from .settings_window import SettingsWindow
 from .status import TrayStatus, load_status
 from .theme import (
@@ -82,9 +82,12 @@ class TrayApp:
         self._menu = QMenu()
         self._tray.setContextMenu(self._menu)
 
-        self._runner = SyncRunner()
-        self._runner.started.connect(self._on_sync_started)
-        self._runner.finished.connect(self._on_sync_finished)
+        # One runner for every subcommand the tray spawns, so its in-flight
+        # guard is archive-wide: a reprocess and a sync would only meet at the
+        # file lock, and the second would die on it.
+        self._runner = CliRunner()
+        self._runner.started.connect(self._on_run_started)
+        self._runner.finished.connect(self._on_run_finished)
 
         self._watcher = StateWatcher(self._state_path)
         self._watcher.changed.connect(self.refresh)
@@ -108,7 +111,7 @@ class TrayApp:
         self._menu.addSeparator()
 
         self._sync_action = QAction(MENU_SYNC_NOW, self._menu)
-        self._sync_action.triggered.connect(lambda: self._runner.start())
+        self._sync_action.triggered.connect(lambda: self._runner.sync())
         self._menu.addAction(self._sync_action)
 
         self._archived_action = QAction(MENU_ARCHIVED_INVOICES, self._menu)
@@ -227,13 +230,21 @@ class TrayApp:
 
     # -- actions --------------------------------------------------------------
 
-    def _on_sync_started(self) -> None:
-        self._sync_action.setText(MENU_SYNCING)
+    def _on_run_started(self, command: str) -> None:
+        # Any child blocks the menu (one at a time), but only a sync gets to
+        # say "Se sincronizează…" — a reprocess is not one, and mislabelling it
+        # would be the menu's only lie about what the app is doing.
+        if command == "sync":
+            self._sync_action.setText(MENU_SYNCING)
         self._sync_action.setEnabled(False)
+        if self._window is not None:
+            self._window.set_busy(True)
 
-    def _on_sync_finished(self, _exit_code: int) -> None:
+    def _on_run_finished(self, _exit_code: int) -> None:
         self._sync_action.setText(MENU_SYNC_NOW)
         self._sync_action.setEnabled(True)
+        if self._window is not None:
+            self._window.set_busy(False)
         self.refresh()
 
     def _on_theme_changed(self, theme: Theme) -> None:
@@ -249,9 +260,13 @@ class TrayApp:
         if self._window is None:
             self._window = MainWindow(
                 state_path=self._state_path,
-                on_retry=self._runner.start,
+                on_retry=self._runner.sync,
+                on_reprocess=self._runner.reprocess,
             )
             self._window.settings_requested.connect(self._open_settings)
+            # A window opened mid-run must not offer a button the guard would
+            # swallow; every later transition comes from the runner's signals.
+            self._window.set_busy(self._runner.running)
         activate_app()  # no-op off macOS; an accessory app must ask to come forward
         self._window.show()
         self._window.raise_()

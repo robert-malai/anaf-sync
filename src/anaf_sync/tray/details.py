@@ -1,10 +1,10 @@
 """The right-hand details pane — normal, delayed, and failing variants.
 
 Rebuilt on each selection from the pure record the model hands over. It emits
-intent signals (open the PDF, reveal in the file manager, retry the sync) that
-the window wires to real actions; it never touches the archive or the network
-itself. Shared phrases come from :mod:`format`, colours from the active
-:class:`Theme`.
+intent signals (open the PDF, reveal in the file manager, retry the sync,
+reprocess this invoice) that the window wires to real actions; it never touches
+the archive or the network itself. Shared phrases come from :mod:`format`,
+colours from the active :class:`Theme`.
 """
 
 from __future__ import annotations
@@ -34,11 +34,37 @@ from .flowgrid import clear_layout
 from .models import FailureRow
 from .theme import LIGHT, MONO_FONT_FAMILY, RADIUS_CHIP, RADIUS_PANEL, Theme
 
-__all__ = ["DetailsPane", "artifact_path"]
+__all__ = ["DetailsPane", "artifact_path", "is_unreadable"]
 
 _WIDTH = 250
 
 _FILE_MISSING_TOOLTIP = "fișierul nu a fost găsit pe disc"
+
+_REPROCESS_LABEL = "Recitește din arhivă"
+_REPROCESS_BUSY = "Se recitește…"
+_REPROCESS_TOOLTIP = (
+    "Recalculează datele facturii din fișierul salvat și, dacă e cazul, "
+    "o mută pe calea dată de șablon. Nu se descarcă nimic."
+)
+#: Backfill rows catalog folders anaf-sync does not own, so `reprocess` skips
+#: them by construction (`Archive.synced`) — say why, rather than offer a
+#: button that would come back "not a downloaded message".
+_BACKFILL_TOOLTIP = (
+    "factură catalogată de pe disc, nu descărcată — anaf-sync nu îi rescrie "
+    "fișierele"
+)
+
+
+def is_unreadable(entry: CatalogEntry) -> bool:
+    """Whether this row shows the blanks an unreadable projection leaves.
+
+    Every one of these comes from the invoice XML, so all three missing at once
+    is the signature of a document anafpy could not read at download time —
+    exactly what ``anaf-sync reprocess`` exists to fix. Deliberately not "any
+    one missing": a genuine invoice can lack a partner name alone, and offering
+    a repair for a row that has nothing to repair reads as a defect.
+    """
+    return entry.number is None and entry.issue_date is None and not entry.partner_name
 
 
 def artifact_path(base_path: str, extension: str) -> Path:
@@ -58,12 +84,15 @@ class DetailsPane(QWidget):
     open_pdf_requested = Signal(object)  # Path
     reveal_requested = Signal(object)  # Path
     retry_requested = Signal()
+    reprocess_requested = Signal(str)  # message id
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedWidth(_WIDTH)
         self._theme: Theme = LIGHT
         self._current: CatalogEntry | FailureRow | None = None
+        self._busy = False
+        self._reprocess_button: QPushButton | None = None
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(16, 16, 16, 16)
@@ -77,12 +106,28 @@ class DetailsPane(QWidget):
 
     def show_record(self, record: CatalogEntry | FailureRow | None) -> None:
         self._current = record
+        self._reprocess_button = None  # the old one dies with the old layout
         if record is None:
             self.show_empty()
         elif isinstance(record, FailureRow):
             self._show_failure(record)
         else:
             self._show_catalog(record)
+
+    def set_busy(self, busy: bool) -> None:
+        """Reflect a tray-spawned command running: the repair button waits.
+
+        One child at a time is the runner's rule, so a second click could only
+        be a no-op — better to say so than to look ignored. Kept as state, since
+        the pane is rebuilt from scratch on every selection and refresh.
+
+        Only ever touches a button that is *actionable*: the one shown on a
+        backfill row is disabled on its own terms and must stay that way.
+        """
+        self._busy = busy
+        if (button := self._reprocess_button) is not None:
+            button.setEnabled(not busy)
+            button.setText(_REPROCESS_BUSY if busy else _REPROCESS_LABEL)
 
     # -- variants -------------------------------------------------------------
 
@@ -97,7 +142,9 @@ class DetailsPane(QWidget):
         self._layout.addWidget(self._title(entry.number or fmt.EM_DASH))
         self._layout.addWidget(self._pill(entry.direction))
 
-        if is_delayed(entry.issue_date, entry.created_at):
+        if is_unreadable(entry):
+            self._layout.addWidget(self._unreadable_panel())
+        elif is_delayed(entry.issue_date, entry.created_at):
             self._layout.addWidget(self._delayed_panel(entry))
 
         self._add_facts(
@@ -140,6 +187,25 @@ class DetailsPane(QWidget):
         )
         return self._panel(
             "Declarată cu întârziere", [body], self._theme.amber, self._theme.amber_bg
+        )
+
+    def _unreadable_panel(self) -> QWidget:
+        """Says why the row is blank — and that the invoice itself is fine.
+
+        The distinction matters more than it looks: an operator seeing an
+        invoice with no number, no date and no partner reasonably fears the
+        download failed. It did not; only the reading of it did, and the signed
+        original on disk is untouched.
+        """
+        return self._panel(
+            "Câmpuri necitite",
+            [
+                "Factura e descărcată și salvată, dar datele din XML nu au "
+                "putut fi citite de această versiune.",
+                f"„{_REPROCESS_LABEL}” încearcă din nou, din fișierul salvat.",
+            ],
+            self._theme.amber,
+            self._theme.amber_bg,
         )
 
     def _failing_panel(self, row: FailureRow) -> QWidget:
@@ -245,6 +311,30 @@ class DetailsPane(QWidget):
         for btn in (open_btn, reveal_btn):
             layout.addWidget(btn, 1)
         self._layout.addWidget(row)
+        self._layout.addWidget(self._reprocess_row(entry))
+
+    def _reprocess_row(self, entry: CatalogEntry) -> QPushButton:
+        """The per-invoice repair, on its own full-width row.
+
+        Below the file buttons and never beside them: those two only open what
+        is already there, while this one re-reads the invoice and may move it.
+        Promoted to primary exactly when the row shows the blanks it repairs,
+        so it is the obvious next thing there and a quiet extra everywhere else
+        (after a template change, one invoice at a time).
+        """
+        button = self._button(_REPROCESS_LABEL, primary=is_unreadable(entry))
+        button.setToolTip(_REPROCESS_TOOLTIP)
+        if entry.source == "backfill":
+            button.setEnabled(False)
+            button.setToolTip(_BACKFILL_TOOLTIP)
+            return button
+        message_id = entry.message_id
+        button.clicked.connect(lambda: self.reprocess_requested.emit(message_id))
+        button.setEnabled(not self._busy)
+        if self._busy:
+            button.setText(_REPROCESS_BUSY)
+        self._reprocess_button = button
+        return button
 
     def _add_provenance(
         self,

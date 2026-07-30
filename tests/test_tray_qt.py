@@ -24,7 +24,7 @@ from anaf_sync.tray.app import (  # noqa: E402
     TrayApp,
 )
 from anaf_sync.tray.icons import status_icon  # noqa: E402
-from anaf_sync.tray.runner import SyncRunner  # noqa: E402
+from anaf_sync.tray.runner import CliRunner  # noqa: E402
 from anaf_sync.tray.status import (  # noqa: E402
     ARCHIVE_UP_TO_DATE,
     NEEDS_ATTENTION,
@@ -167,12 +167,24 @@ def test_tray_app_sync_item_toggles_while_running(
 ) -> None:
     app = _app(tmp_path)
     app.refresh()
-    app._on_sync_started()
+    app._on_run_started("sync")
     assert app._sync_action.text() == MENU_SYNCING
     assert not app._sync_action.isEnabled()
-    app._on_sync_finished(0)
+    app._on_run_finished(0)
     assert app._sync_action.text() == MENU_SYNC_NOW
     assert app._sync_action.isEnabled()
+
+
+def test_tray_app_does_not_call_a_reprocess_a_sync(
+    qtbot: object, tmp_path: Path
+) -> None:
+    """The menu still blocks — one child at a time — but it must not mislabel."""
+    app = _app(tmp_path)
+    app.refresh()
+    app._on_run_started("reprocess")
+
+    assert app._sync_action.text() == MENU_SYNC_NOW
+    assert not app._sync_action.isEnabled()
 
 
 # -- watcher ------------------------------------------------------------------
@@ -267,13 +279,50 @@ def test_watcher_poll_emits_only_when_the_db_changed(
 # -- runner -------------------------------------------------------------------
 
 
-def test_sync_runner_starts_not_running() -> None:
-    runner = SyncRunner()
+def test_cli_runner_starts_not_running() -> None:
+    runner = CliRunner()
     assert runner.running is False
 
 
-def test_sync_runner_finished_clears_and_reports(qtbot: object) -> None:
-    runner = SyncRunner()
+def test_cli_runner_builds_the_targeted_reprocess_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tray never reprocesses in-process — it runs the same CLI an operator
+    would, narrowed to one message and asked to re-file it."""
+    from anaf_sync.tray import runner as runner_module
+
+    monkeypatch.setattr(runner_module, "sync_executable", lambda: tmp_path / "no-such")
+    runner = CliRunner()
+
+    runner.reprocess("4001")
+
+    assert runner._process is not None
+    assert runner._process.arguments() == [
+        "reprocess",
+        "--move",
+        "--message-id",
+        "4001",
+    ]
+
+
+def test_cli_runner_guards_across_subcommands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One child at a time, whatever it is: the second would only die on the
+    file lock the first holds."""
+    from anaf_sync.tray import runner as runner_module
+
+    monkeypatch.setattr(runner_module, "sync_executable", lambda: tmp_path / "no-such")
+    runner = CliRunner()
+    runner.sync()
+
+    runner.reprocess("4001")
+
+    assert runner._process.arguments() == ["sync"]
+
+
+def test_cli_runner_finished_clears_and_reports(qtbot: object) -> None:
+    runner = CliRunner()
     runner._process = object()  # pretend a child is live
     with qtbot.waitSignal(runner.finished, timeout=1000) as blocker:
         runner._on_finished(0, None)
@@ -335,3 +384,33 @@ def test_saving_settings_refreshes_the_tray(
     app._settings._view._save()
 
     assert calls  # the tray status re-reads config.toml straight away
+
+
+def test_facturi_window_reprocess_button_reaches_the_runner(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End of the wire: the pane's button lands on `CliRunner.reprocess`."""
+    app = _app(tmp_path)
+    asked: list[str] = []
+    monkeypatch.setattr(app._runner, "reprocess", asked.append)
+    app._open_window()
+    assert app._window is not None
+
+    app._window._details.reprocess_requested.emit("4001")
+
+    assert asked == ["4001"]
+
+
+def test_a_window_opened_mid_run_starts_busy(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anaf_sync.tray import runner as runner_module
+
+    monkeypatch.setattr(runner_module, "sync_executable", lambda: tmp_path / "no-such")
+    app = _app(tmp_path)
+    app._runner.sync()
+
+    app._open_window()
+
+    assert app._window is not None
+    assert app._window._details._busy is True
