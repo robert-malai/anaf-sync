@@ -15,7 +15,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from anaf_sync.config import write_default_config  # noqa: E402
-from anaf_sync.state import Archive, RunRecord  # noqa: E402
+from anaf_sync.state import Archive, CatalogEntry, RunRecord  # noqa: E402
 from anaf_sync.tray.app import (  # noqa: E402
     MENU_ARCHIVED_INVOICES,
     MENU_SYNC_NOW,
@@ -177,22 +177,80 @@ def test_tray_app_sync_item_toggles_while_running(
 # -- watcher ------------------------------------------------------------------
 
 
+def _record_message(path: Path, message_id: str) -> None:
+    with Archive.open(path) as archive:
+        archive.record(
+            CatalogEntry(
+                message_id=message_id,
+                cif="1",
+                direction="received",
+                base_path=f"/a/{message_id}",
+                artifacts=["zip"],
+                issue_date=dt.date(2026, 7, 18),
+            )
+        )
+
+
 def test_watcher_debounces_events_into_one_change(
     qtbot: object, tmp_path: Path
 ) -> None:
     Archive.open(tmp_path / "state.db").close()
     watcher = StateWatcher(tmp_path / "state.db")
     watcher.start()
+    _record_message(tmp_path / "state.db", "m1")
     with qtbot.waitSignal(watcher.changed, timeout=3000):
         watcher._on_event(str(tmp_path / "state.db"))
     watcher.stop()
 
 
-def test_watcher_poll_emits_change(qtbot: object, tmp_path: Path) -> None:
-    Archive.open(tmp_path / "state.db").close()
+def test_watcher_ignores_the_trays_own_readonly_reads(
+    qtbot: object, tmp_path: Path
+) -> None:
+    # A read-only open writes WAL read-marks into state.db-shm, and the
+    # directory watch reports that write. Emitting on it made every catalog
+    # refresh trigger the next one — a reset loop that jarred the scrollbar
+    # every 500 ms until the list was unscrollable.
+    _record_message(tmp_path / "state.db", "m1")
     watcher = StateWatcher(tmp_path / "state.db")
+    watcher.start()
+    with Archive.open_readonly(tmp_path / "state.db") as archive:
+        archive.catalog(limit=100, offset=0)
+    with qtbot.waitSignal(watcher.changed, timeout=1500, raising=False) as blocker:
+        watcher._on_event(str(tmp_path))
+    assert blocker.signal_triggered is False
+    watcher.stop()
+
+
+def test_watcher_follows_deletion_and_recreation(qtbot: object, tmp_path: Path) -> None:
+    # The probe's persistent connection pins an inode; a deleted or rebuilt
+    # state.db (the lost-DB scenario backfill exists for) must still register,
+    # or the tray would report "no change" forever against the old file.
+    _record_message(tmp_path / "state.db", "m1")
+    watcher = StateWatcher(tmp_path / "state.db")
+    watcher.start()
+    for suffix in ("", "-wal", "-shm"):
+        (tmp_path / f"state.db{suffix}").unlink(missing_ok=True)
     with qtbot.waitSignal(watcher.changed, timeout=1000):
         watcher._on_poll()
+    _record_message(tmp_path / "state.db", "m2")
+    with qtbot.waitSignal(watcher.changed, timeout=1000):
+        watcher._on_poll()
+    watcher.stop()
+
+
+def test_watcher_poll_emits_only_when_the_db_changed(
+    qtbot: object, tmp_path: Path
+) -> None:
+    Archive.open(tmp_path / "state.db").close()
+    watcher = StateWatcher(tmp_path / "state.db")
+    watcher.start()
+    with qtbot.waitSignal(watcher.changed, timeout=500, raising=False) as blocker:
+        watcher._on_poll()
+    assert blocker.signal_triggered is False  # nothing new: a quiet backstop
+    _record_message(tmp_path / "state.db", "m1")
+    with qtbot.waitSignal(watcher.changed, timeout=1000):
+        watcher._on_poll()
+    watcher.stop()
 
 
 # -- runner -------------------------------------------------------------------

@@ -7,8 +7,12 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QModelIndex, Qt  # noqa: E402
-from PySide6.QtWidgets import QHeaderView, QStackedWidget  # noqa: E402
+from PySide6.QtCore import QModelIndex, QPoint, Qt  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QAbstractItemView,
+    QHeaderView,
+    QStackedWidget,
+)
 from sample_data import seed_sample_archive  # noqa: E402
 
 from anaf_sync.state import Archive, CatalogEntry  # noqa: E402
@@ -127,9 +131,9 @@ def test_problem_count_counts_failing_plus_delayed(tmp_path: Path) -> None:
 # `health.is_delayed` — the single rule the model and details pane share.)
 
 
-def test_fetch_more_pages_the_catalog(tmp_path: Path) -> None:
-    with Archive.open(tmp_path / "state.db") as archive:
-        for i in range(150):
+def _seed_pages(path: Path, count: int = 150) -> None:
+    with Archive.open(path) as archive:
+        for i in range(count):
             archive.record(
                 CatalogEntry(
                     message_id=f"m{i:03d}",
@@ -140,12 +144,40 @@ def test_fetch_more_pages_the_catalog(tmp_path: Path) -> None:
                     issue_date=dt.date(2026, 7, 1) + dt.timedelta(days=i % 28),
                 )
             )
+
+
+def test_fetch_more_pages_the_catalog(tmp_path: Path) -> None:
+    _seed_pages(tmp_path / "state.db")
     model = CatalogModel(tmp_path / "state.db", now=lambda: _NOW)
     assert model.rowCount() == 100
     assert model.canFetchMore(QModelIndex()) is True
     model.fetchMore(QModelIndex())
     assert model.rowCount() == 150
     assert model.canFetchMore(QModelIndex()) is False
+
+
+def test_reload_keeps_paged_depth_but_new_filters_start_over(
+    tmp_path: Path,
+) -> None:
+    # A refresh mid-scroll (sync commit, poll) must not collapse the catalog
+    # back to the first page under the reader; picking a filter is a new list
+    # and correctly starts back at one page.
+    _seed_pages(tmp_path / "state.db")
+    model = CatalogModel(tmp_path / "state.db", now=lambda: _NOW)
+    model.fetchMore(QModelIndex())
+    assert model.rowCount() == 150
+    model.reload()
+    assert model.rowCount() == 150
+    model.set_filters(CatalogFilters())
+    assert model.rowCount() == 100
+
+
+def test_row_of_finds_loaded_rows_only(tmp_path: Path) -> None:
+    _seed_pages(tmp_path / "state.db")
+    model = CatalogModel(tmp_path / "state.db", now=lambda: _NOW)
+    first_id = model.data(model.index(0, 0), CatalogModel.MessageIdRole)
+    assert model.row_of(first_id) == 0
+    assert model.row_of("never-archived") is None
 
 
 # -- calendar range state machine --------------------------------------------
@@ -211,6 +243,34 @@ def test_window_selection_updates_details(qtbot: object, tmp_path: Path) -> None
     win._table.selectRow(1)
     assert win._details._current is not None
     assert getattr(win._details._current, "number", None) == "FCT-2107"
+
+
+def test_window_refresh_keeps_scroll_anchor_and_selection(
+    qtbot: object, tmp_path: Path
+) -> None:
+    # The reported bug: with 500+ invoices, every watcher-triggered refresh
+    # reset the model, yanking the scrollbar and dropping the selection until
+    # the list was unscrollable. A refresh must land the reader where they were.
+    _seed_pages(tmp_path / "state.db")
+    win = MainWindow(state_path=tmp_path / "state.db")
+    qtbot.addWidget(win)
+    win.show()
+    qtbot.waitExposed(win)
+    table, model = win._table, win._model
+    model.fetchMore(QModelIndex())
+    table.selectRow(5)
+    selected_id = model.data(model.index(5, 0), CatalogModel.MessageIdRole)
+    table.scrollTo(model.index(120, 0), QAbstractItemView.ScrollHint.PositionAtTop)
+    top_row = table.indexAt(QPoint(0, 0)).row()
+    assert top_row > 100  # deep in the second page
+
+    win.refresh()
+
+    assert model.rowCount() == 150  # depth survived the reset
+    assert table.indexAt(QPoint(0, 0)).row() == top_row
+    current = table.selectionModel().currentIndex()
+    assert model.data(current, CatalogModel.MessageIdRole) == selected_id
+    assert getattr(win._details._current, "message_id", None) == selected_id
 
 
 def test_window_direction_chip_filters(qtbot: object, tmp_path: Path) -> None:

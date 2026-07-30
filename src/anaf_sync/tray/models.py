@@ -97,12 +97,27 @@ class CatalogModel(QAbstractTableModel):
 
     def set_filters(self, filters: CatalogFilters) -> None:
         self._filters = filters
-        self.reload()
+        self._reset(_PAGE)  # a new filter is a new list; start at the top
 
     def reload(self) -> None:
-        """Re-read failing + first page from disk; resets the model."""
+        """Re-read from disk without losing paged depth; resets the model.
+
+        Refetches at least as many rows as were already loaded, so a refresh
+        mid-scroll (a sync commit landing, the poll) does not collapse the
+        catalog back to the first page under the reader.
+        """
+        self._reset(max(_PAGE, len(self._rows)))
+
+    def row_of(self, message_id: str) -> int | None:
+        """The current row of ``message_id`` among the loaded rows, if any."""
+        for row in range(self.shown_count()):
+            if self.entry(row).message_id == message_id:
+                return row
+        return None
+
+    def _reset(self, limit: int) -> None:
         self.beginResetModel()
-        self._load()
+        self._load(limit)
         self.endResetModel()
 
     def entry(self, row: int) -> CatalogEntry | FailureRow:
@@ -176,7 +191,7 @@ class CatalogModel(QAbstractTableModel):
 
     # -- loading --------------------------------------------------------------
 
-    def _load(self) -> None:
+    def _load(self, limit: int) -> None:
         if not self._state_path.exists():
             self._failing, self._rows, self._total = [], [], 0
             self._problem_count = 0
@@ -189,7 +204,7 @@ class CatalogModel(QAbstractTableModel):
                 delayed = len(self._rows)
             else:
                 self._rows = archive.catalog(
-                    **self._query_kwargs(), limit=_PAGE, offset=0
+                    **self._query_kwargs(), limit=limit, offset=0
                 )
                 self._total = archive.catalog_count(**self._query_kwargs())
                 delayed = sum(1 for e in self._scan(archive) if _is_delayed(e))

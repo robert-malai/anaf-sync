@@ -22,7 +22,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QDate, QModelIndex, QUrl, Signal
+from PySide6.QtCore import QByteArray, QDate, QModelIndex, QPoint, QUrl, Signal
 from PySide6.QtGui import QCloseEvent, QDesktopServices, QFontMetrics
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -386,9 +386,37 @@ class MainWindow(QMainWindow):
             self._table.viewport().update()
 
     def refresh(self) -> None:
-        """Re-read the archive (called when the tray detects a state change)."""
+        """Re-read the archive (called when the tray detects a state change).
+
+        Anchored: the top visible row and the selected row are re-found by
+        message id after the reset, so a refresh mid-read never teleports the
+        catalog back to the top or drops the details pane.
+        """
+        if self._table is None:
+            self._model.reload()
+            self._update_footer()
+            return
+        top_id = self._message_id_at(self._table.indexAt(QPoint(0, 0)))
+        selected_id = self._message_id_at(self._table.selectionModel().currentIndex())
         self._model.reload()
+        # Selection first: re-selecting auto-scrolls to the row, so the top
+        # anchor must win by coming last.
+        if (
+            selected_id is not None
+            and (row := self._model.row_of(selected_id)) is not None
+        ):
+            self._table.selectRow(row)
+        if top_id is not None and (row := self._model.row_of(top_id)) is not None:
+            self._table.scrollTo(
+                self._model.index(row, 0), QTableView.ScrollHint.PositionAtTop
+            )
         self._update_footer()
+
+    def _message_id_at(self, index: QModelIndex) -> str | None:
+        if not index.isValid():
+            return None
+        message_id = self._model.data(index, CatalogModel.MessageIdRole)
+        return message_id if isinstance(message_id, str) else None
 
 
 def _section_width(metrics: QFontMetrics, col: int) -> int:
