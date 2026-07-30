@@ -22,7 +22,12 @@ from anafpy.efactura import (
     MessageListItem,
 )
 from anafpy.efactura.authoring import DocumentKind, InvoiceDocument
-from anafpy.exceptions import AnafError, AnafRateLimitError, AnafTransportError
+from anafpy.exceptions import (
+    AnafDownloadExpiredError,
+    AnafError,
+    AnafRateLimitError,
+    AnafTransportError,
+)
 from anafpy.public import PublicClient, TransformStandard
 from pydantic import BaseModel, Field
 from tenacity import (
@@ -75,6 +80,10 @@ class SyncReport(BaseModel):
     missing_id: int = 0  # listed without an id — nothing actionable, not a failure
     downloaded: int = 0
     would_download: int = 0  # dry-run only
+    #: ANAF listed the message but its 60-day download window had already shut.
+    #: Terminal and nobody's fault — deliberately outside :attr:`ok`, and never
+    #: written to the archive; see :func:`_sync_cif`.
+    expired: int = 0
     failures: list[tuple[str, str]] = Field(default_factory=list)  # (id, error)
     #: The end-of-run PDF repair pass; ``None`` when it did not run (dry run,
     #: or ``pdf`` not among the configured artifacts). Deliberately outside
@@ -178,6 +187,18 @@ async def _sync_cif(
             entry = await _archive_message(
                 client, public, config, state, template, item, cif=cif
             )
+        except AnafDownloadExpiredError as exc:
+            # ANAF listed a message it will never hand over: `listaMesaje` and
+            # `descarcare` anchor their 60 days differently, so any lookback
+            # reaching back that far meets the boundary band. Expected on a
+            # first sync (or one catching up after a gap), and nothing an
+            # operator can act on — so it is not a failure and earns no trace.
+            # A `failures` row would be a standing amber over something no
+            # retry can fix, and it would age out of the listing on its own
+            # within days regardless. Logged, counted, and let go.
+            log.warning("download_expired", message_id=message_id, error=str(exc))
+            report.expired += 1
+            continue
         except AnafError as exc:
             log.error("download_failed", message_id=message_id, error=str(exc))
             report.failures.append((message_id, str(exc)))

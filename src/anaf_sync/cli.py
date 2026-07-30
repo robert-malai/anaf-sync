@@ -158,6 +158,7 @@ def _record_run(
             listed=report.listed if report else 0,
             archived=report.downloaded if report else 0,
             failures=len(report.failures) if report else 0,
+            expired=report.expired if report else 0,
             error=error,
             error_kind=error_kind,
         )
@@ -304,6 +305,7 @@ async def sync(
             already_archived=report.already_archived,
             non_invoice=report.skipped_non_invoice,
             missing_id=report.missing_id,
+            expired=report.expired,
             failures=len(report.failures),
         )
     print(
@@ -311,6 +313,7 @@ async def sync(
         f"already archived {report.already_archived} | "
         f"non-invoice {report.skipped_non_invoice}"
         + (f" | missing id {report.missing_id}" if report.missing_id else "")
+        + (f" | expired {report.expired}" if report.expired else "")
         + (f" | would download {report.would_download}" if dry_run else "")
     )
     # The end-of-run repair earns a line only by having had work to do; its
@@ -458,6 +461,11 @@ def status(*, config: ConfigOption = None) -> int:
                     f"listed {last.listed}, new {last.archived}, "
                     f"failures {last.failures}: {summary}"
                 )
+                if last.expired:
+                    print(
+                        f"          {last.expired} message(s) past ANAF's 60-day "
+                        f"download window — never archived, nothing to retry"
+                    )
             for message_id, failure in archive.failures.items():
                 days = days_until_purge(failure, now)
                 print(

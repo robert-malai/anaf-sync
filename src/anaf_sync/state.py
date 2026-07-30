@@ -113,6 +113,13 @@ class RunRecord(BaseModel):
     listed: int = 0
     archived: int = 0
     failures: int = 0
+    #: Messages ANAF listed but refused to hand over, their 60-day download
+    #: window having shut. Not failures — no trace of them is kept anywhere
+    #: else, so this count is the only record that the run met any. Routine on
+    #: a first sync; on a later one it means the schedule had a gap wide enough
+    #: to lose invoices. Defaulted, so records written before it existed (and
+    #: the ``failed`` paths, which have no report) still parse.
+    expired: int = 0
     #: One-line human summary of what went wrong (``None`` on success).
     error: str | None = None
     #: The exception class name (e.g. ``AnafAuthError``); drives the health

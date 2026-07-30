@@ -16,7 +16,7 @@ from anafpy.efactura import (
     MessageListItem,
 )
 from anafpy.efactura.authoring import DocumentKind, InvoiceDocument, Party, Seller
-from anafpy.exceptions import AnafError
+from anafpy.exceptions import AnafDownloadExpiredError, AnafError
 from anafpy.public import PublicClient, TransformStandard
 
 from anaf_sync.config import Artifact, OutputConfig, SyncConfig
@@ -85,6 +85,18 @@ class FailingClient(FakeClient):
     async def download(self, message_id: str) -> DownloadedMessage:
         self.downloads.append(message_id)
         raise AnafError("boom")
+
+
+class ExpiredClient(FakeClient):
+    """ANAF lists the message, then refuses it: the 60-day window has shut."""
+
+    async def download(self, message_id: str) -> DownloadedMessage:
+        self.downloads.append(message_id)
+        raise AnafDownloadExpiredError(
+            f"descarcare: message {message_id!r} is past ANAF's 60-day "
+            "download window and can no longer be fetched",
+            message_id=message_id,
+        )
 
 
 def _config(tmp_path: Path) -> SyncConfig:
@@ -183,6 +195,31 @@ async def test_failures_are_recorded_and_cleared_on_success(tmp_path: Path) -> N
     await _run(FakeClient(_items()), config, state)  # retried despite the record
     assert state.is_archived("m1")
     assert "m1" not in state.failures
+
+
+async def test_expired_downloads_are_counted_but_never_recorded(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    state = Archive.open(tmp_path / "state.db")
+
+    report = await _run(ExpiredClient(_items()), config, state)
+
+    # Not a failure: the run stays ok, so a first sync meeting the boundary
+    # band does not exit non-zero over something no retry can fix.
+    assert report.ok
+    assert report.expired == 1
+    assert report.failures == []
+    assert report.downloaded == 0
+    # No trace anywhere in the archive — neither a failure row (which would
+    # stand amber forever) nor a catalog row (which would gate the dedupe).
+    assert state.failures == {}
+    assert not state.is_archived("m1")
+
+    # And nothing suppresses a later attempt, so a spurious verdict costs one
+    # retry rather than the invoice.
+    await _run(FakeClient(_items()), config, state)
+    assert state.is_archived("m1")
 
 
 def _invoice(message_id: str) -> MessageListItem:

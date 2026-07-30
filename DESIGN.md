@@ -105,6 +105,19 @@ Mechanics (`engine.py` + `state.py`):
   ages past `failure_retention_days`. Only failure traces are pruned, because
   only they go stale; the config key (default 90, `ge=1`, no floor) needs no
   60-day floor now that downloaded records are never at risk from it.
+- **An expired download is not a failure.** `listaMesaje` and `descarcare`
+  anchor their 60 days differently, so ANAF lists messages it then refuses to
+  hand over; any lookback reaching that far back meets the boundary band, which
+  makes it routine on a first sync. anafpy names the condition
+  (`AnafDownloadExpiredError`), and the engine logs it, counts it in
+  `SyncReport.expired`, and lets it go: it writes no `failures` row, because
+  that table is for things that might still succeed and an amber nobody can
+  clear is noise; and no `messages` row, because nothing reached the disk. The
+  count also lands in the `RunRecord`, which is where it earns its keep — on a
+  *later* run, expired messages mean the schedule had a gap wide enough to lose
+  invoices, and that is worth a glance at `anaf-sync status`. Nothing suppresses
+  a re-attempt, so a spurious verdict costs one retry rather than the invoice,
+  and the message drops out of the listing on its own within days.
 - Transient transport and rate-limit errors retry in-process with
   exponential-jitter backoff (tenacity, 4 attempts) before counting as a
   failure. Only the idempotent download GET retries; mirroring anafpy's

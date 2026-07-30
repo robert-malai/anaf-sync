@@ -89,6 +89,11 @@ is considered done.
 
 - ANAF retains messages for **60 days** and rejects older windows; the
   1–60 bound on `lookback_days`/`--days` is ANAF's rule, not ours.
+- Listing and downloading anchor those 60 days differently, so ANAF **lists
+  messages it then refuses to download** (`AnafDownloadExpiredError`) — routine
+  at the edge of a full-window lookback, i.e. on a first sync. The engine
+  counts it (`SyncReport.expired`, `RunRecord.expired`) and records nothing;
+  it is not a failure and must never become one. See DESIGN.md.
 - The message listing never carries party CIFs as JSON fields; anafpy extracts
   them from the `detalii` prose. `context.py` treats them as best-effort.
 - `DownloadedMessage.view` is `None` for non-UBL content (nok error files,
