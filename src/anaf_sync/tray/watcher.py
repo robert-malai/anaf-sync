@@ -40,6 +40,14 @@ class _DataVersionProbe:
     consulted only for *identity*: a deleted or re-created ``state.db`` would
     pin the connection to the old inode and report "no change" forever, so
     the connection follows the file, and either transition counts as a change.
+
+    On Windows that open handle also means ``state.db`` cannot be deleted or
+    replaced while the tray runs — the OS refuses to unlink a file another
+    handle has open. Deliberate: syncing is unaffected (WAL admits a concurrent
+    writer; only *deletion* hits the sharing violation), and the alternative —
+    dropping the handle between polls — reopens the refresh loop this probe
+    exists to close. Rebuilding a lost archive there means quitting the tray
+    first.
     """
 
     def __init__(self, path: Path) -> None:

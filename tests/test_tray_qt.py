@@ -6,6 +6,7 @@ conftest).
 """
 
 import datetime as dt
+import sys
 from pathlib import Path
 
 import pytest
@@ -221,6 +222,16 @@ def test_watcher_ignores_the_trays_own_readonly_reads(
     watcher.stop()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows refuses to unlink a file another handle has open, and the "
+        "probe's connection is exactly that — so the deletion this test models "
+        "cannot happen there while the tray runs. Documented in the watcher's "
+        "docstring rather than worked around: dropping the handle would reopen "
+        "the refresh loop it exists to close."
+    ),
+)
 def test_watcher_follows_deletion_and_recreation(qtbot: object, tmp_path: Path) -> None:
     # The probe's persistent connection pins an inode; a deleted or rebuilt
     # state.db (the lost-DB scenario backfill exists for) must still register,

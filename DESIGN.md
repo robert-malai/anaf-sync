@@ -336,7 +336,13 @@ follows directly from the invariants above:
   prompt to compare `PRAGMA data_version` over one persistent `mode=ro`
   connection — the counter moves only when another connection commits, with
   file *identity* checked separately so a deleted or rebuilt `state.db` still
-  registers through the pinned inode.
+  registers through the pinned inode. The cost of that persistent handle is
+  paid on Windows, which refuses to unlink a file another handle has open:
+  `state.db` cannot be deleted or replaced while the tray runs. Syncing is
+  untouched (WAL admits the concurrent writer; only deletion hits the sharing
+  violation), so the price is that rebuilding a lost archive there means
+  quitting the tray first — cheaper than dropping the handle and reopening the
+  refresh loop it closes.
 - **Three states, derived not stored** (`health.derive_health`, pure and
   tested). Any failure trace → **warn** (amber); a crashed last run or an
   auth/config-family failure → **err** (red); otherwise **ok** (green). `err`
