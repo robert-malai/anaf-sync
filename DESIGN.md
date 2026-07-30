@@ -208,6 +208,32 @@ nothing here is deadline-bound, and the next pass retries whatever is still
 missing. Backfill rows are excluded — they catalog folders the engine does not
 own, and writing new files into them is the operator's call.
 
+The same argument generalises past the PDF, to everything *derived* from the
+document rather than downloaded with it. When anafpy cannot read a document
+ANAF accepted (§8's rule drift), the message still archives — but every
+XML-derived value collapses to `unknown`: the catalog columns the tray shows,
+and the rendered path itself. ANAF offers no way back, since the dedupe gate
+never revisits a message and `--redownload` cannot reach past the 60-day
+window. The stored ZIP can, forever, so `anaf-sync reprocess` re-runs the
+projection off disk: `--refresh` semantics by default (rewrite the catalog
+columns), and `--move` to re-render the path template and relocate the
+message's files under it. Two tiers because they differ in blast radius, not
+in confidence — a column rewrite is invisible from disk, while a move touches
+the operator's own files (and by the same mechanism re-files the whole archive
+after a template change, which is why it is opt-in and honours `--dry-run`).
+
+What reprocessing must *not* invent is the other half of a message. The
+listing entry it was first projected from is long gone, so `message_type` and
+`created_at` (`data_creare`, which the delay flag reads) stay as the download
+recorded them — re-deriving them as `None` would silently turn "unknown delay"
+into "on time". `request_id` is the one path variable with no home in the
+archive at all; a template referencing it refuses the move outright rather
+than render `unknown` over paths that already hold the real value. The move is
+planned before it is applied, tolerates a half-finished predecessor (a
+destination whose source is gone is a move already made), refuses any
+destination still occupied, and orders the file it re-read the message *from*
+last, so an interrupted pass always resumes.
+
 ## 6. Configuration split
 
 Two layers, on purpose:
@@ -284,9 +310,9 @@ Mirrors anafpy's hybrid model:
 - **Catalog search depth.** The desktop companion's Facturi window (§10) is
   the browse UI over the catalog tier the SQLite store (§3) records: it pages
   through `Archive.open_readonly` with SQL-side filtering (`catalog` /
-  `catalog_count`). Full-text search (SQLite **FTS5**) and a `reindex` command
-  to backfill/rebuild catalog columns from the on-disk artifacts are the
-  natural next steps there.
+  `catalog_count`). Full-text search (SQLite **FTS5**) is the natural next step
+  there; the other half of this bullet — rebuilding catalog columns from the
+  on-disk artifacts — shipped as `anaf-sync reprocess` (§5).
 - **Purge awareness.** A message that fails for 60 days straight ages out of
   ANAF's window and is lost. Beyond the per-run report and exit code,
   `anaf-sync status` now prints an "expires from SPV in *N* days" countdown per
@@ -365,7 +391,28 @@ follows directly from the invariants above:
 
 The companion is deliberately not a second way to *do* anything — it observes,
 it configures, and it delegates every mutation to the CLI. That keeps the
-archive's correctness properties (§3) entirely in one place.
+archive's correctness properties (§3) entirely in one place. `CliRunner` is
+that delegation: one child process at a time, whichever subcommand it is
+(`sync` from the menu and the failing-message retry, `reprocess` from the
+details pane's per-invoice button). The single guard is not tidiness — two
+tray-spawned children would meet at the sync lock and the second would simply
+die on it, so the honest UI is one that does not offer the second click.
+
+**Repairing one invoice from the pane.** A row whose number, issue date and
+partner are *all* blank is the signature of the unreadable projection §5
+describes, and the details pane says so — an amber panel that an operator
+seeing an invoice with no data reasonably needs, because the fear it answers
+("did the download fail?") is wrong: only the reading failed, and the signed
+original is on disk. The repair button sits below the file buttons rather than
+beside them (those two only open what is already there; this one re-reads the
+invoice and may move it), is promoted to primary exactly where those blanks
+appear, and stays available — quietly — everywhere else, which is how a single
+invoice gets re-filed after a template change. It runs
+`reprocess --move --message-id`: fixing the catalog but leaving the invoice in
+the `unknown` folder would repair only half of what the operator can see, and
+send them to a terminal for the rest. Backfill rows show it disabled with the
+reason, since `Archive.synced` excludes them by construction and an enabled
+button would promise something the CLI would refuse.
 
 **Two windows, not one stack.** Facturi and Setări are separate top-level
 windows rather than pages of a sidebar-switched stack. The split follows from

@@ -36,6 +36,7 @@ is considered done.
 | `config.py` | TOML sync config + `ANAFPY_*` env auth settings; `init` template |
 | `engine.py` | one sync pass: list → dedupe → download (retry) → write artifacts → `repair_pdfs` (re-render missing PDFs from stored ZIPs; also `anaf-sync render`) |
 | `backfill.py` | catalogs invoices already on disk (past ANAF's 60-day window, or a lost DB); read-only, and its rows never gate a download |
+| `reprocess.py` | re-derives a synced row's catalog columns from its stored ZIP/XML (`anaf-sync reprocess`), and with `--move` re-renders the path template and relocates the files — the way back from an `unknown` projection; never re-derives what only ANAF's listing carried |
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |
 | `logsink.py` | console/system log-mode detection + native sinks: Event Log, os_log, journald |
@@ -44,7 +45,7 @@ is considered done.
 | `health.py` | pure ok/warn/err derivation, purge countdown, delay rule — shared by `status` and the tray |
 | `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd; also home of the shared script-resolution/subprocess helpers |
 | `autostart.py` | login-time autostart for the tray (`anaf-sync tray install\|remove\|status`) |
-| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`icons`/`format` (pure) and `watcher`/`runner`/`store` (Qt edges) and `macos` (the accessory activation policy — no Dock icon without a bundle) |
+| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`icons`/`format` (pure) and `watcher`/`runner`/`store` (Qt edges) and `macos` (the accessory activation policy — no Dock icon without a bundle). `runner.CliRunner` spawns every subcommand the tray offers — `sync`, and `reprocess --move --message-id` behind the details pane's per-invoice button — under one in-flight guard |
 
 ## Invariants — do not break
 

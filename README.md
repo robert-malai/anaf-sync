@@ -216,14 +216,17 @@ fereastra de 60 de zile e încă deschisă.
 anaf-sync sync --dry-run     # arată ce s-ar descărca, fără să scrie nimic
 anaf-sync sync               # descarcă tot ce e nou
 anaf-sync sync --days 7      # restrânge fereastra doar pentru această rulare (1–60)
-anaf-sync sync --redownload  # re-descarcă tot — util după schimbarea șablonului
+anaf-sync sync --redownload  # re-descarcă tot ce mai e în SPV
 ```
 
 Rulările sunt idempotente: un fișier de stare reține id-urile mesajelor deja
 arhivate, așa că ferestrele de 60 de zile care se suprapun nu duplică
 niciodată nimic, iar ce urmează ANAF să șteargă a fost deja capturat.
 `--redownload` sare peste această evidență și aduce din nou tot ce e încă în
-SPV, rescriind fișierele pe căile date de șablonul curent.
+SPV, rescriind fișierele pe căile date de șablonul curent. Pentru simpla
+rearanjare a arhivei după schimbarea șablonului există însă o cale mai bună,
+care nu depinde de fereastra de 60 de zile: `anaf-sync reprocess --move`
+(vezi mai jos).
 
 ### PDF-uri lipsă
 
@@ -247,6 +250,47 @@ anaf-sync render             # le randează din ZIP-urile salvate
 
 Un refuz repetat nu e o eroare de-a ta: se reîncearcă la fiecare rulare și se
 rezolvă de la sine când ANAF acceptă documentul.
+
+### Facturi care apar cu `unknown`
+
+Uneori o factură ajunge în arhivă, dar fără date: în aplicația din bara de
+sistem apare fără număr, fără partener și fără valoare, iar pe disc stă
+într-un folder `unknown`. Descărcarea a reușit — doar citirea XML-ului nu:
+ANAF a acceptat un document pe care versiunea instalată de `anafpy` nu îl
+poate încă interpreta. Factura în sine e intactă, ZIP-ul semnat e la locul lui.
+
+Nu e nevoie să o descarci din nou (și nici nu s-ar putea, după 60 de zile):
+tot ce lipsește se recalculează din ZIP-ul deja salvat, oricând, fără
+autentificare și fără limită de timp.
+
+```bash
+anaf-sync reprocess --dry-run          # arată ce s-ar corecta
+anaf-sync reprocess                    # recitește ZIP-urile și corectează catalogul
+anaf-sync reprocess --move --dry-run   # și unde s-ar muta fișierele
+anaf-sync reprocess --move             # le mută pe calea dată de șablon
+```
+
+Pentru o singură factură există și butonul **„Recitește din arhivă”** din
+fereastra Facturi a aplicației din bara de sistem; pe rândurile fără date apare
+evidențiat, cu explicația de mai sus. Din linia de comandă, aceeași restrângere
+se face cu `--message-id`:
+
+```bash
+anaf-sync reprocess --move --message-id 3210447811
+```
+
+Fără `--move`, comanda schimbă doar ce se vede în aplicație — fișierele rămân
+exact unde sunt. Cu `--move`, recalculează și calea din șablon și mută acolo
+toate fișierele facturii, golind folderul `unknown` rămas în urmă. Dacă o
+factură tot nu poate fi citită, comanda o numără separat, pe `unreadable`:
+atunci merită raportată, iar o versiune mai nouă de `anafpy` plus încă o rulare
+a aceleiași comenzi rezolvă restul.
+
+`--move` e și modul corect de a reorganiza arhiva **după ce schimbi
+`template`**: rearanjează fișierele deja descărcate, local, fără să mai ceară
+nimic de la ANAF — spre deosebire de `sync --redownload`, care le poate aduce
+din nou doar pe cele încă aflate în fereastra de 60 de zile. Rulează întâi cu
+`--dry-run`, ca să vezi câte fișiere s-ar muta.
 
 ## Facturi mai vechi de 60 de zile
 
@@ -321,6 +365,13 @@ Din meniu poți porni o sincronizare, deschide folderul arhivei, răsfoi facturi
 arhivate și edita configurația — fără să atingi `config.toml` manual (deși
 rămâne editabil manual oricând). Aplicația doar citește arhiva și scrie
 `config.toml`; orice descărcare o face tot `anaf-sync sync`.
+
+În fereastra **Facturi**, panoul din dreapta are pentru fiecare factură un buton
+**„Recitește din arhivă”**: recalculează datele din fișierul deja salvat și, dacă
+e cazul, mută factura pe calea dată de șablon. E aceeași operație ca
+`anaf-sync reprocess --move`, doar că pentru o singură factură — util mai ales
+la facturile [afișate cu `unknown`](#facturi-care-apar-cu-unknown), unde butonul
+apare evidențiat, sub o explicație a motivului.
 
 Instalare (adaugă dependențele grafice PySide6):
 
