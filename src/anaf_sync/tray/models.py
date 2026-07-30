@@ -103,8 +103,8 @@ class CatalogModel(QAbstractTableModel):
         """Re-read from disk without losing paged depth; resets the model.
 
         Refetches at least as many rows as were already loaded, so a refresh
-        mid-scroll (a sync commit landing, the poll) does not collapse the
-        catalog back to the first page under the reader.
+        mid-scroll (a sync commit landing, a config or theme change) does not
+        collapse the catalog back to the first page under the reader.
         """
         self._reset(max(_PAGE, len(self._rows)))
 

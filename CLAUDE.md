@@ -79,7 +79,11 @@ is considered done.
 - **The tray is a read-only observer.** It reads the archive via
   `Archive.open_readonly`, edits only `config.toml` (tomlkit round-trip), and
   delegates every sync to the `anaf-sync sync` CLI. Never give it a second
-  code path that mutates the archive.
+  code path that mutates the archive. One deliberate exception to the
+  ephemeral-connection pattern: the watcher's `_DataVersionProbe` holds the
+  tray's single persistent connection (also `mode=ro`), reading only
+  `PRAGMA data_version` to decide when a refresh is warranted — filesystem
+  events alone cannot, because the tray's own reads touch `state.db-shm`.
 
 ## Sharp edges
 

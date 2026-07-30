@@ -303,7 +303,14 @@ follows directly from the invariants above:
   sync writes) and edits only `config.toml`, via a tomlkit round-trip that
   preserves the user's comments and formatting. Every actual sync is performed
   by spawning the same `anaf-sync sync` CLI — one code path for the schedule and
-  the button alike, one `filelock` (§3) serialising both.
+  the button alike, one `filelock` (§3) serialising both. Refreshes are driven
+  by data, not file events: WAL readers write read-marks into `state.db-shm`,
+  so the tray's own reads generate filesystem events, and refreshing on those
+  fed a self-sustaining reset loop. The watcher instead treats events as a
+  prompt to compare `PRAGMA data_version` over one persistent `mode=ro`
+  connection — the counter moves only when another connection commits, with
+  file *identity* checked separately so a deleted or rebuilt `state.db` still
+  registers through the pinned inode.
 - **Three states, derived not stored** (`health.derive_health`, pure and
   tested). Any failure trace → **warn** (amber); a crashed last run or an
   auth/config-family failure → **err** (red); otherwise **ok** (green). `err`

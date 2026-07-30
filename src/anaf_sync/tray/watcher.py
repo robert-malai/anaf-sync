@@ -2,7 +2,7 @@
 
 A ``QFileSystemWatcher`` fires on writes to the database and its WAL sidecar; a
 500 ms debounce collapses the burst a single sync commit produces into one
-refresh. Because an atomic replace makes the watcher drop the old file, paths
+check. Because an atomic replace makes the watcher drop the old file, paths
 are re-added on every event, and a 60 s poll is kept as a backstop for any
 event the platform misses.
 
@@ -53,7 +53,9 @@ class _DataVersionProbe:
         self.changed()
 
     def changed(self) -> bool:
-        """Whether committed content moved since the last call (or ``prime``)."""
+        """Whether the database changed since the last call (or ``prime``) —
+        a commit by another connection, or the file itself appearing,
+        vanishing, or being replaced."""
         if (identity := _identity_of(self._path)) is None:
             return self._forget()
         if self._conn is not None and identity == self._identity:
