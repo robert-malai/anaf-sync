@@ -20,8 +20,8 @@ from anafpy.exceptions import AnafError
 from anafpy.public import PublicClient, TransformStandard
 
 from anaf_sync.config import Artifact, OutputConfig, SyncConfig
-from anaf_sync.engine import SyncReport, _sync_cif, _transform_standard
-from anaf_sync.state import Archive
+from anaf_sync.engine import SyncReport, _sync_cif, _transform_standard, repair_pdfs
+from anaf_sync.state import Archive, CatalogEntry
 from anaf_sync.template import PathTemplate
 
 
@@ -456,6 +456,168 @@ def test_transform_standard_follows_document_kind() -> None:
     assert _transform_standard(invoice) is TransformStandard.INVOICE
     assert _transform_standard(credit_note) is TransformStandard.CREDIT_NOTE
     assert _transform_standard(None) is TransformStandard.INVOICE
+
+
+class RenderingPublicClient:
+    """A transformare that renders: returns PDF bytes, records each call."""
+
+    def __init__(self) -> None:
+        self.standards: list[TransformStandard] = []
+
+    async def render_invoice_pdf(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+        validate: bool = True,
+    ) -> bytes:
+        self.standards.append(standard)
+        return b"%PDF-1.7 fake"
+
+
+class ExplodingPublicClient:
+    """A transformare that cannot be reached at all."""
+
+    async def render_invoice_pdf(
+        self,
+        xml: str | bytes,
+        *,
+        standard: TransformStandard = TransformStandard.INVOICE,
+        validate: bool = True,
+    ) -> bytes:
+        raise AnafError("bad gateway")
+
+
+async def _archive_zip_only(tmp_path: Path, state: Archive) -> Path:
+    """Sync one message whose PDF render ANAF refused; returns its base path."""
+    config = _config(tmp_path)
+    config.output.artifacts = [Artifact.ZIP, Artifact.PDF]
+    report = SyncReport()
+    await _sync_cif(
+        cast(EFacturaClient, FakeClient(_items())),
+        cast(PublicClient, RefusingPublicClient()),
+        config,
+        state,
+        PathTemplate(config.output.template),
+        report,
+        cif="111",
+        days=60,
+        dry_run=False,
+        redownload=False,
+    )
+    assert _row(tmp_path / "state.db", "m1")["artifacts"] == '["zip"]'
+    return tmp_path / "archive" / "111" / "received" / "m1"
+
+
+async def test_repair_renders_the_missing_pdf(tmp_path: Path) -> None:
+    """The way back from a refused render — see anaf-sync#4.
+
+    The XML is already inside the archived ZIP and transformare is public, so
+    a missing PDF is re-rendered from disk: no download, no 60-day deadline,
+    and the dedupe gate never comes into it.
+    """
+    state = Archive.open(tmp_path / "state.db")
+    base = await _archive_zip_only(tmp_path, state)
+
+    report = await repair_pdfs(state, cast(PublicClient, RenderingPublicClient()))
+
+    assert (report.candidates, report.rendered) == (1, 1)
+    assert base.with_suffix(".pdf").read_bytes() == b"%PDF-1.7 fake"
+    assert _row(tmp_path / "state.db", "m1")["artifacts"] == '["zip", "pdf"]'
+
+    # Repaired rows leave the worklist: the next pass has nothing to do.
+    second = await repair_pdfs(state, cast(PublicClient, RenderingPublicClient()))
+    assert second.candidates == 0
+
+
+async def test_repair_leaves_a_refused_row_pending(tmp_path: Path) -> None:
+    """A render ANAF still refuses is counted, not failed, and stays eligible."""
+    state = Archive.open(tmp_path / "state.db")
+    base = await _archive_zip_only(tmp_path, state)
+
+    report = await repair_pdfs(state, cast(PublicClient, RefusingPublicClient()))
+
+    assert (report.candidates, report.refused) == (1, 1)
+    assert report.ok  # refusals have no deadline and are not operator errors
+    assert not base.with_suffix(".pdf").exists()
+    assert _row(tmp_path / "state.db", "m1")["artifacts"] == '["zip"]'
+
+    healed = await repair_pdfs(state, cast(PublicClient, RenderingPublicClient()))
+    assert healed.rendered == 1  # the moment ANAF relents, the row heals
+
+
+async def test_repair_reports_a_transport_error_without_dying(
+    tmp_path: Path,
+) -> None:
+    state = Archive.open(tmp_path / "state.db")
+    await _archive_zip_only(tmp_path, state)
+
+    report = await repair_pdfs(state, cast(PublicClient, ExplodingPublicClient()))
+
+    assert report.failures == [("m1", "bad gateway")]
+    assert not report.ok
+    assert _row(tmp_path / "state.db", "m1")["artifacts"] == '["zip"]'
+
+
+async def test_repair_skips_a_row_whose_zip_is_gone(tmp_path: Path) -> None:
+    state = Archive.open(tmp_path / "state.db")
+    base = await _archive_zip_only(tmp_path, state)
+    base.with_suffix(".zip").unlink()
+
+    report = await repair_pdfs(state, cast(PublicClient, RenderingPublicClient()))
+
+    assert (report.candidates, report.skipped, report.rendered) == (1, 1, 0)
+    assert report.ok  # the operator moved their own files; nothing to fail
+
+
+async def test_repair_skips_an_archive_with_no_invoice_xml(tmp_path: Path) -> None:
+    """A signature-only ZIP has nothing transformare could render — permanent,
+    routine, and quiet, like the non-UBL half of the view distinction."""
+    state = Archive.open(tmp_path / "state.db")
+    base = await _archive_zip_only(tmp_path, state)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr(zipfile.ZipInfo("semnatura_4001.xml", _ZIP_STAMP), "<Signature/>")
+    base.with_suffix(".zip").write_bytes(buffer.getvalue())
+
+    public = RenderingPublicClient()
+    report = await repair_pdfs(state, cast(PublicClient, public))
+
+    assert (report.skipped, report.rendered) == (1, 0)
+    assert public.standards == []  # decided locally, no network
+
+
+async def test_repair_dry_run_touches_nothing(tmp_path: Path) -> None:
+    state = Archive.open(tmp_path / "state.db")
+    base = await _archive_zip_only(tmp_path, state)
+
+    public = RenderingPublicClient()
+    report = await repair_pdfs(state, cast(PublicClient, public), dry_run=True)
+
+    assert (report.candidates, report.would_render, report.rendered) == (1, 1, 0)
+    assert public.standards == []  # nothing rendered, nothing even requested
+    assert not base.with_suffix(".pdf").exists()
+    assert _row(tmp_path / "state.db", "m1")["artifacts"] == '["zip"]'
+
+
+async def test_repair_never_writes_into_backfilled_folders(tmp_path: Path) -> None:
+    """Backfill rows catalog folders the engine does not own; adding files to
+    them is the operator's call, not a repair's."""
+    state = Archive.open(tmp_path / "state.db")
+    state.record(
+        CatalogEntry(
+            message_id="backfill:abc123",
+            cif="111",
+            direction="received",
+            base_path=(tmp_path / "history" / "factura").as_posix(),
+            artifacts=["zip"],
+            source="backfill",
+        )
+    )
+
+    report = await repair_pdfs(state, cast(PublicClient, RenderingPublicClient()))
+
+    assert report.candidates == 0
 
 
 async def test_dry_run_writes_nothing(tmp_path: Path) -> None:

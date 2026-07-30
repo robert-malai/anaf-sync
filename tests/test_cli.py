@@ -6,7 +6,7 @@ import pytest
 
 from anaf_sync import cli
 from anaf_sync.config import load_config, write_default_config
-from anaf_sync.engine import SyncReport
+from anaf_sync.engine import RepairReport, SyncReport
 from anaf_sync.state import Archive
 
 
@@ -155,6 +155,75 @@ async def test_dry_run_records_nothing(
     assert result == 0
     # A dry run touches no state, so no last-run record is written.
     assert _last_run(tmp_path) is None
+
+
+async def test_sync_prints_a_repair_line_only_when_there_was_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    monkeypatch.setattr(
+        cli.AuthSettings, "from_env", staticmethod(lambda: _DummyAuth())
+    )
+    report = SyncReport(listed=1, repair=RepairReport(candidates=2, rendered=2))
+    monkeypatch.setattr(cli, "run_sync", _fake_sync(report))
+
+    assert await cli.sync(config=config) == 0
+    assert "pdf repair: rendered 2" in capsys.readouterr().out
+
+    quiet = SyncReport(listed=1, repair=RepairReport())
+    monkeypatch.setattr(cli, "run_sync", _fake_sync(quiet))
+    assert await cli.sync(config=config) == 0
+    assert "pdf repair" not in capsys.readouterr().out
+
+
+def _fake_repair(report: RepairReport) -> object:
+    async def run(*args: object, **kwargs: object) -> RepairReport:
+        return report
+
+    return run
+
+
+async def test_render_reports_and_leaves_last_run_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    report = RepairReport(candidates=2, rendered=1, refused=1)
+    monkeypatch.setattr(cli, "run_repair", _fake_repair(report))
+
+    result = await cli.render(config=config)
+
+    assert result == 0  # a refusal is retryable, not an operator error
+    assert "rendered 1 | refused 1" in capsys.readouterr().out
+    # `last_run` is the schedule's health record; a manual repair is not a sync.
+    assert _last_run(tmp_path) is None
+
+
+async def test_render_exits_nonzero_on_transport_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    report = RepairReport(candidates=1, failures=[("m1", "bad gateway")])
+    monkeypatch.setattr(cli, "run_repair", _fake_repair(report))
+
+    assert await cli.render(config=config) == 1
+    assert "failed m1: bad gateway" in capsys.readouterr().err
+
+
+async def test_render_requires_pdf_in_the_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.toml"
+    write_default_config(config, cifs=["12345678"])
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('["zip", "pdf"]', '["zip"]'),
+        encoding="utf-8",
+    )
+
+    assert await cli.render(config=config) == 1
+    assert "output.artifacts" in capsys.readouterr().err
 
 
 def test_tray_status_command(

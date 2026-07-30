@@ -151,6 +151,32 @@ def test_claim_base_unowned_self_and_foreign(tmp_path: Path) -> None:
         assert archive.claim_base(Path("x/y"), "m2") == Path("x/y_m2")
 
 
+def test_missing_pdf_lists_only_synced_rows_without_one(tmp_path: Path) -> None:
+    archive = Archive.open(tmp_path / "state.db")
+    archive.record(_entry("m1", "a/complete", artifacts=["zip", "pdf"]))
+    archive.record(_entry("m2", "a/gap", artifacts=["zip"]))
+    # A backfill row without a PDF is not repair's business (foreign folder).
+    archive.record(
+        _entry("backfill:x", "a/history", artifacts=["zip"], source="backfill")
+    )
+
+    assert [entry.message_id for entry in archive.missing_pdf()] == ["m2"]
+
+
+def test_add_artifact_appends_once_and_persists(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    archive = Archive.open(path)
+    archive.record(_entry("m1", "a/gap", artifacts=["zip"]))
+
+    archive.add_artifact("m1", "pdf")
+    archive.add_artifact("m1", "pdf")  # idempotent — a re-run must not double it
+    archive.add_artifact("ghost", "pdf")  # unknown id: a quiet no-op
+
+    with Archive.open(path) as reopened:  # persisted, not just in memory
+        assert reopened.catalog()[0].artifacts == ["zip", "pdf"]
+        assert reopened.missing_pdf() == []
+
+
 def test_failure_insert_then_bump(tmp_path: Path) -> None:
     path = tmp_path / "state.db"
     with Archive.open(path) as archive:

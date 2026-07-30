@@ -225,6 +225,29 @@ niciodată nimic, iar ce urmează ANAF să șteargă a fost deja capturat.
 `--redownload` sare peste această evidență și aduce din nou tot ce e încă în
 SPV, rescriind fișierele pe căile date de șablonul curent.
 
+### PDF-uri lipsă
+
+Se poate întâmpla ca descărcarea să reușească, dar randarea PDF-ului să fie
+refuzată de ANAF — firewall-ul lor respinge uneori XML-ul unor facturi perfect
+valide. Mesajul e arhivat atunci doar cu ZIP-ul (originalul semnat nu se pierde
+niciodată), iar PDF-ul rămâne pe lista de așteptare.
+
+Nu trebuie făcut nimic: la sfârșitul fiecărei rulări, `sync` reîncearcă automat
+PDF-urile lipsă, direct din ZIP-urile deja salvate — fără autentificare și fără
+limita de 60 de zile, pentru că XML-ul e deja pe disc. Când există astfel de
+restanțe, sumarul rulării capătă o linie `pdf repair: …`.
+
+Același pas există și ca o comandă de sine stătătoare, ca să repari o arhivă
+existentă pe loc, fără să aștepți următoarea rulare programată:
+
+```bash
+anaf-sync render --dry-run   # arată ce PDF-uri lipsesc și s-ar putea randa
+anaf-sync render             # le randează din ZIP-urile salvate
+```
+
+Un refuz repetat nu e o eroare de-a ta: se reîncearcă la fiecare rulare și se
+rezolvă de la sine când ANAF acceptă documentul.
+
 ## Facturi mai vechi de 60 de zile
 
 ANAF păstrează mesajele 60 de zile și atât. Orice factură mai veche de-atât nu

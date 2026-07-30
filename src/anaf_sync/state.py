@@ -275,6 +275,42 @@ class Archive:
                 "DELETE FROM failures WHERE message_id = ?", (entry.message_id,)
             )
 
+    def missing_pdf(self) -> list[CatalogEntry]:
+        """Synced rows whose artifacts lack a PDF — the repair pass's worklist.
+
+        Backfill rows are excluded by construction: they catalog folders the
+        engine does not own, and writing new files into them is not this tool's
+        call. The dedupe gate is untouched — this reads what a row already says
+        about itself, it never changes what ``is_archived`` answers.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM messages"
+            " WHERE source = 'sync' AND artifacts NOT LIKE '%\"pdf\"%'"
+        ).fetchall()
+        return [_entry_from_row(row) for row in rows]
+
+    def add_artifact(self, message_id: str, artifact: str) -> None:
+        """Append one artifact to a recorded message (a repaired PDF, say).
+
+        Touches only ``artifacts`` — ``saved_at`` keeps naming the run that
+        archived the message, not the repair. An unknown id or an
+        already-present value is a no-op, so a crashed repair can simply run
+        again.
+        """
+        row = self._conn.execute(
+            "SELECT artifacts FROM messages WHERE message_id = ?", (message_id,)
+        ).fetchone()
+        if row is None:
+            return
+        artifacts = json.loads(row["artifacts"])
+        if artifact in artifacts:
+            return
+        with self._conn:
+            self._conn.execute(
+                "UPDATE messages SET artifacts = ? WHERE message_id = ?",
+                (json.dumps([*artifacts, artifact]), message_id),
+            )
+
     def record_failure(self, message_id: str, error: str) -> None:
         """Insert a failure trace, or bump attempts/last_failed_at/error."""
         now = dt.datetime.now(dt.UTC).isoformat()

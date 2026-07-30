@@ -34,7 +34,7 @@ is considered done.
 |---|---|
 | `cli.py` | cyclopts commands; the only place exceptions are caught for the user |
 | `config.py` | TOML sync config + `ANAFPY_*` env auth settings; `init` template |
-| `engine.py` | one sync pass: list → dedupe → download (retry) → write artifacts |
+| `engine.py` | one sync pass: list → dedupe → download (retry) → write artifacts → `repair_pdfs` (re-render missing PDFs from stored ZIPs; also `anaf-sync render`) |
 | `backfill.py` | catalogs invoices already on disk (past ANAF's 60-day window, or a lost DB); read-only, and its rows never gate a download |
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |

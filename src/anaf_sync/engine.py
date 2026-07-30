@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import zipfile
 from pathlib import Path
 
 import structlog
@@ -36,7 +37,7 @@ from .context import direction_of, project_message, read_view
 from .state import Archive, CatalogEntry
 from .template import PathTemplate, artifact_path
 
-__all__ = ["SyncReport", "run_sync"]
+__all__ = ["RepairReport", "SyncReport", "run_repair", "run_sync"]
 
 logger = structlog.get_logger(__name__)
 
@@ -45,6 +46,24 @@ _FILTERS: dict[Direction, Filter | None] = {
     Direction.SENT: Filter.SENT,
     Direction.BOTH: None,
 }
+
+
+class RepairReport(BaseModel):
+    """Outcome of one PDF repair pass (see :func:`repair_pdfs`)."""
+
+    candidates: int = 0
+    rendered: int = 0
+    would_render: int = 0  # dry-run only
+    #: ANAF answered without a PDF (its WAF rejecting the XML, say). Retried on
+    #: every later pass — no deadline applies, the ZIP is already on disk.
+    refused: int = 0
+    #: Nothing to render from: the ZIP is gone, corrupt, or holds no invoice.
+    skipped: int = 0
+    failures: list[tuple[str, str]] = Field(default_factory=list)  # (id, error)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
 
 
 class SyncReport(BaseModel):
@@ -57,6 +76,10 @@ class SyncReport(BaseModel):
     downloaded: int = 0
     would_download: int = 0  # dry-run only
     failures: list[tuple[str, str]] = Field(default_factory=list)  # (id, error)
+    #: The end-of-run PDF repair pass; ``None`` when it did not run (dry run,
+    #: or ``pdf`` not among the configured artifacts). Deliberately outside
+    #: :attr:`ok` — see :func:`repair_pdfs`.
+    repair: RepairReport | None = None
 
     @property
     def ok(self) -> bool:
@@ -93,6 +116,8 @@ async def run_sync(
                     dry_run=dry_run,
                     redownload=redownload,
                 )
+            if public is not None and not dry_run:
+                report.repair = await repair_pdfs(state, public)
         finally:
             if public is not None:
                 await public.aclose()
@@ -181,6 +206,81 @@ async def _sync_cif(
             path=entry.base_path,
             artifacts=entry.artifacts,
         )
+
+
+async def run_repair(
+    config: SyncConfig, state: Archive, *, dry_run: bool = False
+) -> RepairReport:
+    """One standalone repair pass, for ``anaf-sync render``.
+
+    Raises:
+        ValueError: the config does not ask for PDFs at all.
+    """
+    if Artifact.PDF not in config.output.artifacts:
+        raise ValueError(
+            "'pdf' is not in output.artifacts — nothing to render; "
+            "add it to the config first"
+        )
+    public = PublicClient()
+    try:
+        return await repair_pdfs(state, public, dry_run=dry_run)
+    finally:
+        await public.aclose()
+
+
+async def repair_pdfs(
+    state: Archive, public: PublicClient, *, dry_run: bool = False
+) -> RepairReport:
+    """Render the PDFs missing from already-archived messages.
+
+    A render can fail long after its download succeeded — ANAF's WAF rejecting
+    the invoice XML, a network blip — and the dedupe gate deliberately never
+    revisits an archived message. This pass is the way back: the XML is already
+    on disk inside the archived ZIP, and ``transformare`` is public, so a
+    missing PDF can be re-rendered forever, unconstrained by ANAF's 60-day
+    window. Runs at the end of every sync pass and behind ``anaf-sync render``.
+
+    Repair outcomes never fail a run (only :attr:`RepairReport.failures`
+    surfaces in the ``render`` exit code): nothing here is deadline-bound, and
+    the next pass retries whatever is still missing.
+    """
+    report = RepairReport()
+    for entry in state.missing_pdf():
+        report.candidates += 1
+        log = logger.bind(message_id=entry.message_id)
+        base = Path(entry.base_path)
+        zip_path = artifact_path(base, ".zip")
+        try:
+            message = DownloadedMessage.from_zip(zip_path.read_bytes())
+        except (OSError, zipfile.BadZipFile) as exc:
+            # Reported, never fatal: one lost or corrupt ZIP must not abandon
+            # the rest of the worklist — nor fail the run, since the row only
+            # records what an operator already did to their own files.
+            log.warning("repair_unreadable", path=str(zip_path), error=str(exc))
+            report.skipped += 1
+            continue
+        if message.content_xml is None:
+            # An archived errors file or buyer message: permanent and routine,
+            # scanned again next pass at the cost of one local read.
+            report.skipped += 1
+            continue
+        if dry_run:
+            report.would_render += 1
+            log.info("would_render", path=str(base))
+            continue
+        try:
+            path = await _write_pdf(base, message, entry.message_id, public)
+        except AnafError as exc:
+            log.warning("repair_failed", error=str(exc))
+            report.failures.append((entry.message_id, str(exc)))
+            continue
+        if path is None:
+            report.refused += 1  # _write_pdf logged the body it got instead
+            continue
+        state.add_artifact(entry.message_id, Artifact.PDF.value)
+        report.rendered += 1
+        log.info("pdf_repaired", path=str(path))
+    return report
 
 
 async def _download_with_retry(
@@ -303,7 +403,7 @@ async def _write_artifact(
         )
         return path
     if artifact is Artifact.PDF:
-        return await _write_pdf(base, message, item, public)
+        return await _write_pdf(base, message, item.id, public)
     raise AssertionError(f"unhandled artifact {artifact}")  # pragma: no cover
 
 
@@ -317,7 +417,7 @@ def _transform_standard(view: InvoiceDocument | None) -> TransformStandard:
 async def _write_pdf(
     base: Path,
     message: DownloadedMessage,
-    item: MessageListItem,
+    message_id: str | None,
     public: PublicClient | None,
 ) -> Path | None:
     """Render the invoice to PDF via ANAF's public transformare service."""
@@ -333,7 +433,7 @@ async def _write_pdf(
         validate=False,
     )
     if not body.startswith(b"%PDF"):
-        logger.warning("pdf_render_failed", message_id=item.id, body=body[:120])
+        logger.warning("pdf_render_failed", message_id=message_id, body=body[:120])
         return None
     path = artifact_path(base, ".pdf")
     path.write_bytes(body)

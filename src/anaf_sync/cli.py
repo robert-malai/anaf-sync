@@ -29,7 +29,7 @@ from .config import (
     load_config,
     write_default_config,
 )
-from .engine import SyncReport, run_sync
+from .engine import SyncReport, run_repair, run_sync
 from .health import days_until_purge
 from .lock import LockHeldError, sync_lock
 from .logsink import LogMode, resolve_mode, system_log_handler
@@ -312,6 +312,61 @@ async def sync(
         f"non-invoice {report.skipped_non_invoice}"
         + (f" | missing id {report.missing_id}" if report.missing_id else "")
         + (f" | would download {report.would_download}" if dry_run else "")
+    )
+    # The end-of-run repair earns a line only by having had work to do; its
+    # outcomes never touch the exit code (see `repair_pdfs`).
+    if (repair := report.repair) is not None and repair.candidates:
+        print(
+            f"pdf repair: rendered {repair.rendered} | "
+            f"refused {repair.refused} | skipped {repair.skipped}"
+            + (f" | errors {len(repair.failures)}" if repair.failures else "")
+        )
+    if not report.ok:
+        for message_id, error in report.failures:
+            print(f"failed {message_id}: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+@app.command
+async def render(
+    *,
+    config: ConfigOption = None,
+    dry_run: Annotated[
+        bool,
+        Parameter(negative="", help="List what would be rendered; write nothing."),
+    ] = False,
+) -> int:
+    """Render the PDFs missing from already-archived messages.
+
+    Re-renders from the stored ZIPs via ANAF's public transformare service, so
+    it needs no credentials and no 60-day window applies. `sync` runs the same
+    pass at the end of every run; this command exists for one-shot repairs of
+    an existing archive.
+    """
+    config_path = _resolve_config_path(config)
+    state_path = default_state_path()
+    try:
+        cfg = load_config(config_path)
+        # The same lock `sync` takes: both write PDFs and catalog rows.
+        with (
+            sync_lock(state_path.with_name("sync.lock")),
+            Archive.open(state_path) as state,
+        ):
+            report = await run_repair(cfg, state, dry_run=dry_run)
+    except (FileNotFoundError, ValueError, LockHeldError, AnafError) as exc:
+        return _fail(str(exc))
+
+    # Deliberately no `_record_run` — same reasoning as `backfill`: `last_run`
+    # is the schedule's health record, and a manual repair is not a sync.
+    print(
+        f"missing pdf {report.candidates} | "
+        + (
+            f"would render {report.would_render}"
+            if dry_run
+            else f"rendered {report.rendered} | refused {report.refused}"
+        )
+        + f" | skipped {report.skipped}"
     )
     if not report.ok:
         for message_id, error in report.failures:

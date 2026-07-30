@@ -182,6 +182,19 @@ artifact is enabled, and a non-PDF response (ANAF answers HTTP 200 with a
 JSON error) is a logged skip, not a failure — the invoice itself is already
 safe on disk.
 
+"Can be regenerated later" is a mechanism, not just a consolation: the dedupe
+gate never revisits an archived message, so a skipped render would otherwise be
+permanent (ANAF's WAF is known to reject legitimate invoice XML — see
+[anaf-sync#4](https://github.com/robert-malai/anaf-sync/issues/4)). The engine
+therefore ends every sync pass with `repair_pdfs`: the catalog's `artifacts`
+column is the worklist (`sync` rows without `"pdf"`), the stored ZIP is the
+source, and a successful render appends to that column — the gate itself is
+never consulted or changed. The same pass is exposed as `anaf-sync render` for
+one-shot repairs. Its outcomes never fail a run: unlike a missed download,
+nothing here is deadline-bound, and the next pass retries whatever is still
+missing. Backfill rows are excluded — they catalog folders the engine does not
+own, and writing new files into them is the operator's call.
+
 ## 6. Configuration split
 
 Two layers, on purpose:
