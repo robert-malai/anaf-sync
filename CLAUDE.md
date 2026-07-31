@@ -100,6 +100,15 @@ is considered done.
 - `DownloadedMessage.view` is `None` for non-UBL content (nok error files,
   buyer messages) *and* for rule-drift — the template must render regardless
   (missing values become `unknown`).
+- **`QProcess` reports a failed launch synchronously on Windows** — the
+  `CreateProcess` call fails inside `start()` — and asynchronously everywhere
+  else, where the `exec` failure reaches the event loop a turn later. So
+  `CliRunner.start` emits `started` *before* `process.start()`: emitting after
+  delivered the pair inverted on Windows only, and the tray's handlers then ran
+  in the order that leaves the menu disabled for a child that never ran. Tests
+  around the in-flight guard fake at the `QProcess` seam for the same reason —
+  aiming one at a missing executable encodes a single platform's timing as the
+  contract.
 - anafpy's API is best learned from the installed source under
   `.venv/lib/python3.12/site-packages/anafpy/` — its docstrings are the spec.
 

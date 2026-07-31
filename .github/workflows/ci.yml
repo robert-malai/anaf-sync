@@ -62,13 +62,21 @@ jobs:
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
       # Unlike coverage, this one runs even when the suite is red — a failed
-      # run is exactly the one whose test results are worth reading.
+      # run is exactly the one whose test results are worth reading. Same
+      # action as the coverage upload, told to carry the other report type:
+      # `test-results-action` is deprecated in favour of exactly this.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: ${{ matrix.os }}-py${{ matrix.python-version }}
+          report_type: test_results
+          # Named rather than searched for: the searcher would also sweep up
+          # the coverage report the step above already uploaded.
+          files: ./junit.xml
+          disable_search: true
+          fail_ci_if_error: false
       # The static gates are platform-independent; run them once per Python on
       # the Linux leg, which has PySide6 installed (mypy reads its stubs).
       - name: Ruff lint

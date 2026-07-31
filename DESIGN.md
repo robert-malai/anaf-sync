@@ -397,6 +397,13 @@ that delegation: one child process at a time, whichever subcommand it is
 details pane's per-invoice button). The single guard is not tidiness — two
 tray-spawned children would meet at the sync lock and the second would simply
 die on it, so the honest UI is one that does not offer the second click.
+The guard is raised before the child is launched, and `started` is emitted
+before `QProcess.start()` rather than after: Windows fails a launch *inside*
+that call, where every other platform reports it a turn later through the event
+loop, so emitting afterwards delivered `finished` ahead of `started` on Windows
+alone — and the tray, taking the two in the order they arrived, re-enabled its
+menu and then disabled it forever, waiting on a process that never ran. Signal
+order is the contract here; the platform's timing is not.
 
 **Repairing one invoice from the pane.** A row whose number, issue date and
 partner are *all* blank is the signature of the unreadable projection §5
