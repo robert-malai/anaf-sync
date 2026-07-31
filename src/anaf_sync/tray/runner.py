@@ -43,8 +43,12 @@ class CliRunner(QObject):
         process.finished.connect(self._on_finished)
         process.errorOccurred.connect(self._on_error)
         self._process = process
-        process.start()
+        # `started` before `start()`, not after: Windows reports a failed launch
+        # synchronously (`CreateProcess` fails inside `start()`), so emitting
+        # afterwards would deliver `finished` first and leave the UI disabled for
+        # a child that never ran. POSIX defers the same error to the event loop.
         self.started.emit(arguments[0])
+        process.start()
 
     def sync(self) -> None:
         """Launch a plain sync — the menu's action, and the retry button's."""

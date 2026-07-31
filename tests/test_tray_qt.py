@@ -279,6 +279,63 @@ def test_watcher_poll_emits_only_when_the_db_changed(
 # -- runner -------------------------------------------------------------------
 
 
+class _FakeSignal:
+    """Just enough of a Qt signal for the runner to connect and for a fake
+    process to fire it back."""
+
+    def __init__(self) -> None:
+        self._slots: list[object] = []
+
+    def connect(self, slot: object) -> None:
+        self._slots.append(slot)
+
+    def emit(self, *args: object) -> None:
+        for slot in list(self._slots):
+            slot(*args)  # type: ignore[operator]
+
+
+class _FakeProcess:
+    """A child that never actually launches.
+
+    Faked at the ``QProcess`` seam rather than aimed at a missing executable,
+    because *when* a failed launch is reported is platform-specific: Windows
+    fails inside ``start()``, POSIX defers to the event loop. Tests about the
+    command and the guard must not depend on that.
+    """
+
+    def __init__(self, *, fails: bool = False) -> None:
+        self._arguments: list[str] = []
+        self._fails = fails
+        self.finished = _FakeSignal()
+        self.errorOccurred = _FakeSignal()
+
+    def setProgram(self, program: str) -> None:  # noqa: N802 - Qt's spelling
+        self._program = program
+
+    def setArguments(self, arguments: list[str]) -> None:  # noqa: N802
+        self._arguments = list(arguments)
+
+    def arguments(self) -> list[str]:
+        return self._arguments
+
+    def start(self) -> None:
+        if self._fails:  # what Windows does: report before `start()` returns
+            self.errorOccurred.emit(object())
+
+
+def _fake_processes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, fails: bool = False
+) -> None:
+    """Point the runner at a resolvable script and a child that never runs."""
+    from anaf_sync.tray import runner as runner_module
+
+    script = tmp_path / "anaf-sync"
+    monkeypatch.setattr(runner_module, "sync_executable", lambda: script)
+    monkeypatch.setattr(
+        runner_module, "QProcess", lambda _parent: _FakeProcess(fails=fails)
+    )
+
+
 def test_cli_runner_starts_not_running() -> None:
     runner = CliRunner()
     assert runner.running is False
@@ -289,9 +346,7 @@ def test_cli_runner_builds_the_targeted_reprocess_command(
 ) -> None:
     """The tray never reprocesses in-process — it runs the same CLI an operator
     would, narrowed to one message and asked to re-file it."""
-    from anaf_sync.tray import runner as runner_module
-
-    monkeypatch.setattr(runner_module, "sync_executable", lambda: tmp_path / "no-such")
+    _fake_processes(monkeypatch, tmp_path)
     runner = CliRunner()
 
     runner.reprocess("4001")
@@ -310,15 +365,32 @@ def test_cli_runner_guards_across_subcommands(
 ) -> None:
     """One child at a time, whatever it is: the second would only die on the
     file lock the first holds."""
-    from anaf_sync.tray import runner as runner_module
-
-    monkeypatch.setattr(runner_module, "sync_executable", lambda: tmp_path / "no-such")
+    _fake_processes(monkeypatch, tmp_path)
     runner = CliRunner()
     runner.sync()
 
     runner.reprocess("4001")
 
+    assert runner._process is not None
     assert runner._process.arguments() == ["sync"]
+
+
+def test_cli_runner_reports_started_before_a_synchronous_launch_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows fails a launch inside ``start()``. If `started` came after, the
+    UI would see finished-then-started and stay disabled for a child that never
+    ran — so the pair must arrive in order on every platform."""
+    _fake_processes(monkeypatch, tmp_path, fails=True)
+    runner = CliRunner()
+    seen: list[str] = []
+    runner.started.connect(lambda command: seen.append(f"started:{command}"))
+    runner.finished.connect(lambda code: seen.append(f"finished:{code}"))
+
+    runner.sync()
+
+    assert seen == ["started:sync", "finished:1"]
+    assert runner.running is False  # and the guard is clear again
 
 
 def test_cli_runner_finished_clears_and_reports(qtbot: object) -> None:
@@ -404,9 +476,7 @@ def test_facturi_window_reprocess_button_reaches_the_runner(
 def test_a_window_opened_mid_run_starts_busy(
     qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from anaf_sync.tray import runner as runner_module
-
-    monkeypatch.setattr(runner_module, "sync_executable", lambda: tmp_path / "no-such")
+    _fake_processes(monkeypatch, tmp_path)
     app = _app(tmp_path)
     app._runner.sync()
 
