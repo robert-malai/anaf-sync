@@ -484,3 +484,44 @@ def test_a_window_opened_mid_run_starts_busy(
 
     assert app._window is not None
     assert app._window._details._busy is True
+
+
+def test_clear_layout_unparents_before_deleting(qtbot: object) -> None:
+    """A taken-but-still-parented widget keeps painting at its old geometry.
+
+    Rebuild-in-place views (the details pane, the Setări form, the variable
+    panel) would otherwise render the previous contents underneath the new
+    ones until the event loop got round to the deletion.
+    """
+    from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+    from anaf_sync.tray.flowgrid import clear_layout
+
+    host = QWidget()
+    qtbot.addWidget(host)
+    layout = QVBoxLayout(host)
+    stale = QLabel("Selectați o factură pentru detalii.")
+    layout.addWidget(stale)
+    assert stale.parent() is host
+
+    clear_layout(layout)
+    assert layout.count() == 0
+    assert stale.parent() is None
+
+
+def test_clear_layout_drains_nested_layouts(qtbot: object) -> None:
+    from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
+    from anaf_sync.tray.flowgrid import clear_layout
+
+    host = QWidget()
+    qtbot.addWidget(host)
+    outer = QVBoxLayout(host)
+    inner = QHBoxLayout()
+    buried = QLabel("row")
+    inner.addWidget(buried)
+    outer.addLayout(inner)
+
+    clear_layout(outer)
+    assert outer.count() == 0
+    assert buried.parent() is None

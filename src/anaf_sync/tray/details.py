@@ -27,16 +27,18 @@ from ..health import (
     is_delayed,
     upload_delay_working_days,
 )
-from ..state import CatalogEntry
+from ..state import CatalogEntry, role_cifs
 from ..template import artifact_path as _artifact_path
 from . import format as fmt
 from .flowgrid import clear_layout
 from .models import FailureRow
 from .theme import LIGHT, MONO_FONT_FAMILY, RADIUS_CHIP, RADIUS_PANEL, Theme
 
-__all__ = ["DetailsPane", "artifact_path", "is_unreadable"]
+__all__ = ["PANE_WIDTH", "DetailsPane", "artifact_path", "is_unreadable"]
 
-_WIDTH = 250
+#: The pane is a reading column, not a draggable one — the window sizes its
+#: collapsing container to match.
+PANE_WIDTH = 250
 
 _FILE_MISSING_TOOLTIP = "fișierul nu a fost găsit pe disc"
 
@@ -88,7 +90,7 @@ class DetailsPane(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(_WIDTH)
+        self.setFixedWidth(PANE_WIDTH)
         self._theme: Theme = LIGHT
         self._current: CatalogEntry | FailureRow | None = None
         self._busy = False
@@ -147,9 +149,13 @@ class DetailsPane(QWidget):
         elif is_delayed(entry.issue_date, entry.created_at):
             self._layout.addWidget(self._delayed_panel(entry))
 
+        # The same two roles the table shows, and by the same rule — issuer
+        # and recipient, not "yours" and "theirs" (:func:`state.role_cifs`).
+        issuer, recipient = role_cifs(entry)
         self._add_facts(
             ("Partener", entry.partner_name or fmt.EM_DASH),
-            ("CIF partener", fmt.provenance(entry.partner_cif)),
+            ("De la CIF", fmt.provenance(issuer)),
+            ("Pentru CIF", fmt.provenance(recipient)),
             ("Data emiterii", fmt.short_date(entry.issue_date)),
             ("Încărcată în SPV", fmt.short_date(_spv_date(entry))),
             ("Total", fmt.money(entry.total, entry.currency)),

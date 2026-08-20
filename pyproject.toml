@@ -102,9 +102,10 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Qt overrides (rowCount, fetchMore, paintCell, …) must keep their camelCase
-# names to bind to the C++ virtuals; the naming rule cannot apply in the tray.
-"src/anaf_sync/tray/*.py" = ["N802"]
+# Qt overrides (rowCount, fetchMore, paintSection, …) must keep their camelCase
+# names to bind to the C++ virtuals, and paintSection's `logicalIndex` its
+# camelCase *parameter* name; the naming rules cannot apply in the tray.
+"src/anaf_sync/tray/*.py" = ["N802", "N803"]
 
 [tool.mypy]
 python_version = "3.12"

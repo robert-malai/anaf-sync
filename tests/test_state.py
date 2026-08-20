@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from anaf_sync.state import Archive, CatalogEntry, RunRecord
+from anaf_sync.state import (
+    Archive,
+    CatalogEntry,
+    CatalogQuery,
+    RunRecord,
+    role_cifs,
+)
 
 # The pre-``created_at`` schema, verbatim, so the migration test starts from a
 # real v1 database rather than a doctored v2 one.
@@ -432,27 +438,38 @@ def test_catalog_orders_newest_first_nulls_last(tmp_path: Path) -> None:
 def test_catalog_filters_by_direction(tmp_path: Path) -> None:
     with Archive.open(tmp_path / "state.db") as archive:
         _seed_catalog(archive)
-        received = archive.catalog(direction="received")
+        received = archive.catalog(CatalogQuery(directions={"received"}))
         assert {e.message_id for e in received} == {"a", "c", "d"}
-        assert archive.catalog_count(direction="sent") == 1
+        assert archive.catalog_count(CatalogQuery(directions={"sent"})) == 1
+        # Both selected is the same as unfiltered; none selected matches
+        # nothing rather than raising on "IN ()".
+        both = CatalogQuery(directions={"received", "sent"})
+        assert archive.catalog_count(both) == 4
+        assert archive.catalog_count(CatalogQuery(directions=frozenset())) == 0
 
 
 def test_catalog_search_matches_number_or_partner(tmp_path: Path) -> None:
     with Archive.open(tmp_path / "state.db") as archive:
         _seed_catalog(archive)
         # Case-insensitive; matches partner name...
-        assert {e.message_id for e in archive.catalog(search="acme")} == {"c"}
+        assert {e.message_id for e in archive.catalog(CatalogQuery(search="acme"))} == {
+            "c"
+        }
         # ...and invoice number.
-        assert {e.message_id for e in archive.catalog(search="AS-10")} == {"b"}
+        assert {
+            e.message_id for e in archive.catalog(CatalogQuery(search="AS-10"))
+        } == {"b"}
         # "d" is "X SRL" (no dots), so only a/b/c match "S.R.L.".
-        assert archive.catalog_count(search="S.R.L.") == 3
+        assert archive.catalog_count(CatalogQuery(search="S.R.L.")) == 3
 
 
 def test_catalog_filters_by_issue_date_range(tmp_path: Path) -> None:
     with Archive.open(tmp_path / "state.db") as archive:
         _seed_catalog(archive)
         window = archive.catalog(
-            issued_from=dt.date(2026, 7, 10), issued_to=dt.date(2026, 7, 16)
+            CatalogQuery(
+                issued_from=dt.date(2026, 7, 10), issued_to=dt.date(2026, 7, 16)
+            )
         )
         assert [e.message_id for e in window] == ["b"]  # only the 15th
 
@@ -471,3 +488,157 @@ def test_distinct_cifs_sorted(tmp_path: Path) -> None:
         archive.record(_entry("b", "pb", cif="12345678"))
         archive.record(_entry("c", "pc", cif="12345678"))  # duplicate
         assert archive.distinct_cifs() == ["12345678", "87654321"]
+
+
+def _seed_flow(archive: Archive) -> None:
+    """Two followed CIFs, both directions — enough for the role columns to swap."""
+    archive.record(
+        _entry(
+            "recv",
+            "p-recv",
+            cif="12345678",
+            direction="received",
+            partner_cif="14338501",
+            issue_date=dt.date(2026, 7, 18),
+            number="FCT-2107",
+            total=4821.50,
+        )
+    )
+    archive.record(
+        _entry(
+            "sent",
+            "p-sent",
+            cif="12345678",
+            direction="sent",
+            partner_cif="22518743",
+            issue_date=dt.date(2026, 7, 15),
+            number="AS-1042",
+            total=12400.0,
+        )
+    )
+    archive.record(
+        _entry(
+            "blind",
+            "p-blind",
+            cif="87654321",
+            direction="received",
+            issue_date=dt.date(2026, 7, 3),
+            number="FCT-1001",
+        )
+    )
+
+
+def test_role_cifs_swap_with_direction(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_flow(archive)
+        # The followed CIF is the *recipient* of a received invoice...
+        assert {
+            e.message_id for e in archive.catalog(CatalogQuery(to_cif="12345678"))
+        } == {"recv"}
+        # ...and the *issuer* of a sent one, from the same stored column.
+        assert {
+            e.message_id for e in archive.catalog(CatalogQuery(from_cif="12345678"))
+        } == {"sent"}
+        # The partner's CIF mirrors it.
+        assert {
+            e.message_id for e in archive.catalog(CatalogQuery(from_cif="14338501"))
+        } == {"recv"}
+        assert {
+            e.message_id for e in archive.catalog(CatalogQuery(to_cif="22518743"))
+        } == {"sent"}
+
+
+def test_role_cif_filter_skips_rows_without_a_partner_cif(tmp_path: Path) -> None:
+    """A best-effort blank must not match — LIKE over NULL is NULL, not true."""
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_flow(archive)
+        assert archive.catalog_count(CatalogQuery(from_cif="8765")) == 0
+
+
+def test_catalog_sorts_by_any_whitelisted_column(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_flow(archive)
+        by_number = archive.catalog(order_by="number", descending=False)
+        assert [e.number for e in by_number] == ["AS-1042", "FCT-1001", "FCT-2107"]
+        by_total = archive.catalog(order_by="total", descending=True)
+        assert [e.message_id for e in by_total][:2] == ["sent", "recv"]
+
+
+def test_catalog_sorts_blanks_last_in_both_directions(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_flow(archive)  # "blind" has no total
+        for descending in (True, False):
+            ordered = archive.catalog(order_by="total", descending=descending)
+            assert ordered[-1].message_id == "blind"
+
+
+def test_catalog_refuses_to_sort_by_an_unlisted_column(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_flow(archive)
+        with pytest.raises(ValueError, match="direction"):
+            archive.catalog(order_by="direction")
+
+
+def test_catalog_paging_is_stable_under_a_tied_sort_key(tmp_path: Path) -> None:
+    """Without the message_id tiebreak, ties duplicate and skip across pages."""
+    with Archive.open(tmp_path / "state.db") as archive:
+        for n in range(6):
+            archive.record(
+                _entry(f"m{n}", f"p{n}", direction="received", partner_name="SAME SRL")
+            )
+        pages = [
+            e.message_id
+            for offset in (0, 2, 4)
+            for e in archive.catalog(order_by="partner_name", limit=2, offset=offset)
+        ]
+        assert sorted(pages) == [f"m{n}" for n in range(6)]
+
+
+def test_catalog_filters_by_upload_date_including_the_whole_last_day(
+    tmp_path: Path,
+) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        archive.record(
+            _entry(
+                "late",
+                "p-late",
+                direction="received",
+                created_at=dt.datetime(2026, 7, 20, 23, 59),
+            )
+        )
+        archive.record(
+            _entry(
+                "early",
+                "p-early",
+                direction="received",
+                created_at=dt.datetime(2026, 7, 19, 6, 0),
+            )
+        )
+        window = CatalogQuery(
+            uploaded_from=dt.date(2026, 7, 20), uploaded_to=dt.date(2026, 7, 20)
+        )
+        # A bare "created_at <= '2026-07-20'" would drop the 23:59 upload.
+        assert [e.message_id for e in archive.catalog(window)] == ["late"]
+
+
+def test_catalog_filters_number_and_partner_separately(tmp_path: Path) -> None:
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_catalog(archive)
+        # Search spans both columns; the column filters do not.
+        assert archive.catalog_count(CatalogQuery(number="ACME")) == 0
+        assert archive.catalog_count(CatalogQuery(partner="ACME")) == 1
+        assert archive.catalog_count(CatalogQuery(search="ACME")) == 1
+
+
+@pytest.mark.parametrize("descending", [True, False])
+def test_role_cifs_match_the_sql(tmp_path: Path, descending: bool) -> None:
+    """The rendered roles and the sorted ones are the same rule, stated twice."""
+    with Archive.open(tmp_path / "state.db") as archive:
+        _seed_flow(archive)
+        for key, index in (("from_cif", 0), ("to_cif", 1)):
+            ordered = archive.catalog(order_by=key, descending=descending)
+            values = [role_cifs(e)[index] for e in ordered]
+            present = [v for v in values if v is not None]
+            assert present == sorted(present, reverse=descending)
+            # Blanks land last whichever way the sort runs.
+            assert values[len(present) :] == [None] * (len(values) - len(present))

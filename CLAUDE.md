@@ -40,12 +40,12 @@ is considered done.
 | `context.py` | assembles the template variable dict for one message |
 | `template.py` | `str.format`-based path template, sanitised per substitution |
 | `logsink.py` | console/system log-mode detection + native sinks: Event Log, os_log, journald |
-| `state.py` | SQLite `Archive`: dedupe gate + permanent catalog of archived messages (idempotence) + pruned failure traces (visibility only, never a retry gate) + the `meta.last_run` `RunRecord` the tray/health read |
+| `state.py` | SQLite `Archive`: dedupe gate + permanent catalog of archived messages (idempotence) + pruned failure traces (visibility only, never a retry gate) + the `meta.last_run` `RunRecord` the tray/health read. `catalog(query, order_by=…)` takes a `CatalogQuery` and a whitelisted sort key; `role_cifs` mirrors the issuer/recipient SQL for readers |
 | `lock.py` | `filelock`-based `sync_lock` — one sync at a time; the DB cannot serialize runs |
 | `health.py` | pure ok/warn/err derivation, purge countdown, delay rule — shared by `status` and the tray |
 | `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd; also home of the shared script-resolution/subprocess helpers |
 | `autostart.py` | login-time autostart for the tray (`anaf-sync tray install\|remove\|status`) |
-| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`icons`/`format` (pure) and `watcher`/`runner`/`store` (Qt edges) and `macos` (the accessory activation policy — no Dock icon without a bundle). `runner.CliRunner` spawns every subcommand the tray offers — `sync`, and `reprocess --move --message-id` behind the details pane's per-invoice button — under one in-flight guard |
+| `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`format`/`period` (importable without PySide6 at all), `filters` (widget-free derivation, but it names the model's columns so it needs the import) and `icons`/`watcher`/`runner`/`store` (Qt edges) and `macos` (the accessory activation policy — no Dock icon without a bundle). Sorting and filtering live on the table header: `header.CatalogHeader` paints the ▽ and hit-tests it, `filterpopups` holds the four popover kinds, `filterbar` echoes what is active, and `filters.FilterState` is the one pure value all three derive from. `runner.CliRunner` spawns every subcommand the tray offers — `sync`, and `reprocess --move --message-id` behind the details pane's per-invoice button — under one in-flight guard |
 
 ## Invariants — do not break
 
@@ -109,6 +109,36 @@ is considered done.
   around the in-flight guard fake at the `QProcess` seam for the same reason —
   aiming one at a missing executable encodes a single platform's timing as the
   contract.
+- **The catalog sorts in SQL, never in a proxy.** `CatalogModel` pages through
+  `fetchMore`, so a `QSortFilterProxyModel` would order only the rows already
+  fetched and re-shuffle the list as the reader scrolls. Any new sort key goes
+  in `state._SORT_EXPR` (a whitelist — the value is spliced into `ORDER BY`),
+  and every ordering keeps its `message_id DESC` tiebreak: without a unique
+  final key, `LIMIT`/`OFFSET` paging over a non-unique column duplicates and
+  skips rows between pages.
+- **`QHeaderView` hosts no child widgets**, so the filter funnel is painted in
+  `paintSection` and hit-tested in `mousePressEvent`, one margin clear of the
+  resize handle. Both marks are drawn as polygons rather than typed as `▲`/`▽`:
+  those glyphs are missing from enough UI fonts to render as tofu boxes.
+  Neither `setSortingEnabled` nor `sectionsClickable` is used: both hand the
+  gesture to `QHeaderView`, which **flips its own sort indicator inside
+  `mouseReleaseEvent`, before it emits `sectionClicked`**. A handler reading the
+  indicator from that signal sees the already-flipped state, so "click again to
+  reverse" never reverses and an unsortable section still ends up carrying the
+  indicator. The header decides on the release, from the section captured on the
+  press. Test it with `QTest.mouseClick`, never by emitting `sectionClicked` —
+  that shortcut bypasses the very method the bug lives in, which is the same
+  wrong-seam trap this file records for `QProcess`.
+- `QHeaderView.restoreState` replays **interaction flags**, not just geometry:
+  `sortIndicatorShown` and `sectionsClickable` both come back out of the blob,
+  so the window re-asserts them after every restore.
+- **`clear_layout` un-parents before deleting.** A widget merely taken out of a
+  layout stays a child of the same parent and keeps painting at its old
+  geometry until the deferred delete runs, so a rebuilt pane renders the
+  previous view underneath the new one.
+- The Facturi header blob (`facturi/header/vN`) carries the sort indicator, so
+  the tray's `QSettings` fixture is **per test**: one shared file would let a
+  test that clicks a header change the row order every later test sees.
 - anafpy's API is best learned from the installed source under
   `.venv/lib/python3.12/site-packages/anafpy/` — its docstrings are the spec.
 

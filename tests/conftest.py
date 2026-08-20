@@ -16,16 +16,21 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _isolate_qsettings(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Point the tray's UI-state store at a throwaway ini file for the session.
+@pytest.fixture(autouse=True)
+def _isolate_qsettings(tmp_path: Path) -> None:
+    """Point the tray's UI-state store at a throwaway ini file, per test.
 
     Both windows persist geometry through ``store.geometry_settings``; without
     this redirect the suite would read and write the developer's real per-user
     store. Redirecting the factory rather than ``QSettings.setDefaultFormat``
     is deliberate: on macOS the ``(organization, application)`` constructor
     ignores the default format and still resolves to a ``NativeFormat`` plist.
-    No-op when the ``tray`` extra (PySide6) is absent.
+
+    Per *test*, not per session: pytest-qt closes every registered widget at
+    teardown, and Facturi's ``closeEvent`` saves its header layout — which now
+    carries the sort indicator. One shared file would let a test that clicks a
+    header change the row order every later test sees. No-op when the ``tray``
+    extra (PySide6) is absent.
     """
     try:
         from PySide6.QtCore import QSettings
@@ -33,7 +38,7 @@ def _isolate_qsettings(tmp_path_factory: pytest.TempPathFactory) -> None:
         return
     from anaf_sync.tray import store
 
-    path = str(tmp_path_factory.mktemp("qsettings") / "tray.ini")
+    path = str(tmp_path / "tray.ini")
     store.geometry_settings = lambda: QSettings(  # type: ignore[assignment]
         path, QSettings.Format.IniFormat
     )

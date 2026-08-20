@@ -34,9 +34,58 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-__all__ = ["Archive", "CatalogEntry", "FailureRecord", "RunRecord"]
+__all__ = [
+    "DEFAULT_ORDER_BY",
+    "SORTABLE_COLUMNS",
+    "Archive",
+    "CatalogEntry",
+    "CatalogQuery",
+    "FailureRecord",
+    "RunRecord",
+    "role_cifs",
+]
+
+#: The two role CIFs are derived, not stored: an invoice goes *from* one CIF
+#: *to* another, and which of them is the followed one depends on
+#: ``direction``. Kept as SQL rather than computed per page in the reader, so
+#: that ordering and filtering on them stay server-side and paged.
+_FROM_CIF = "CASE direction WHEN 'sent' THEN cif ELSE partner_cif END"
+_TO_CIF = "CASE direction WHEN 'sent' THEN partner_cif ELSE cif END"
+
+
+def role_cifs(entry: CatalogEntry) -> tuple[str | None, str | None]:
+    """``(issuer, recipient)`` for one row — the Python mirror of the SQL above.
+
+    Readers render these two columns while SQL sorts and filters them, so the
+    rule is stated twice and could drift; ``test_role_cifs_match_the_sql``
+    pins the two statements together.
+    """
+    if entry.direction == "sent":
+        return entry.cif, entry.partner_cif
+    return entry.partner_cif, entry.cif
+
+
+#: Sortable columns mapped to the SQL that orders them. This is a whitelist,
+#: not a format hole: the value is spliced straight into ``ORDER BY``, so
+#: nothing that is not a key here may ever reach it. ``direction`` is
+#: deliberately absent — three values make a filter, not a sort.
+_SORT_EXPR: dict[str, str] = {
+    "issue_date": "issue_date",
+    "created_at": "created_at",
+    "number": "number",
+    "partner_name": "partner_name",
+    "from_cif": _FROM_CIF,
+    "to_cif": _TO_CIF,
+    "total": "total",
+}
+
+#: What :meth:`Archive.catalog` will accept as ``order_by``.
+SORTABLE_COLUMNS = frozenset(_SORT_EXPR)
+
+#: The order the catalog has always emitted, and still does unasked.
+DEFAULT_ORDER_BY = "issue_date"
 
 _SCHEMA_VERSION = "3"
 
@@ -140,6 +189,43 @@ class FailureRecord(BaseModel):
     last_failed_at: dt.datetime
     attempts: int = 1
     error: str
+
+
+class CatalogQuery(BaseModel):
+    """The SQL-side filters :meth:`Archive.catalog` understands, as one value.
+
+    Grouped rather than spread across keyword arguments: every filter otherwise
+    has to be threaded by hand through :meth:`Archive.catalog`,
+    :meth:`Archive.catalog_count` and their shared WHERE builder, and three
+    signatures that must agree drift the moment one of them is edited alone.
+
+    Every field is "unset means unfiltered". ``search`` spans two columns
+    (``number`` OR ``partner_name``); the rest each name one. ``from_cif`` and
+    ``to_cif`` filter the *derived* role CIFs — issuer and recipient — not the
+    stored ``cif``/``partner_cif`` pair, so they read the same for a sent
+    invoice as for a received one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    search: str | None = None
+    number: str | None = None
+    partner: str | None = None
+    from_cif: str | None = None
+    to_cif: str | None = None
+    #: ``None`` means every direction; an empty set means none, and matches
+    #: nothing rather than raising — a UI mid-edit should not crash the reader.
+    directions: frozenset[str] | None = None
+    issued_from: dt.date | None = None
+    issued_to: dt.date | None = None
+    #: Compared against ``created_at``'s *date*, so an upper bound includes
+    #: everything uploaded during that day rather than only midnight.
+    uploaded_from: dt.date | None = None
+    uploaded_to: dt.date | None = None
+
+
+#: Shared default for the query parameter — immutable, so one instance is safe.
+_NO_FILTERS = CatalogQuery()
 
 
 class Archive:
@@ -433,69 +519,46 @@ class Archive:
 
     def catalog(
         self,
+        query: CatalogQuery = _NO_FILTERS,
         *,
-        search: str | None = None,
-        direction: str | None = None,
-        issued_from: dt.date | None = None,
-        issued_to: dt.date | None = None,
+        order_by: str = DEFAULT_ORDER_BY,
+        descending: bool = True,
         limit: int = 100,
         offset: int = 0,
     ) -> list[CatalogEntry]:
-        """A filtered, paged slice of the archived catalog.
+        """A filtered, ordered, paged slice of the archived catalog.
 
-        Ordered newest-first by ``issue_date`` then ``message_id`` (rows with no
-        issue date sort last). Filtering happens in SQL so the caller can
-        lazy-load pages instead of materialising the whole table. ``search``
-        matches ``number`` or ``partner_name`` case-insensitively.
+        Defaults to newest-issued first, which is the order the catalog has
+        always emitted. Filtering and ordering both happen in SQL so the caller
+        can lazy-load pages: a reader that sorts the pages it has already
+        fetched would silently re-order the list as the user scrolls.
+
+        Args:
+            query: The filters to apply; unset fields do not filter.
+            order_by: A key of :data:`SORTABLE_COLUMNS`.
+            descending: Sort direction. Rows whose sort value is ``NULL`` land
+                last either way.
+            limit: Page size.
+            offset: Rows to skip before the page.
+
+        Raises:
+            ValueError: If ``order_by`` names a column that cannot be sorted.
         """
-        where, params = self._catalog_filters(search, direction, issued_from, issued_to)
+        where, params = _catalog_filters(query)
         rows = self._conn.execute(
-            f"SELECT * FROM messages{where} "
-            "ORDER BY issue_date IS NULL, issue_date DESC, message_id DESC "
+            f"SELECT * FROM messages{where} {_order_clause(order_by, descending)} "
             "LIMIT ? OFFSET ?",
             (*params, limit, offset),
         ).fetchall()
         return [_entry_from_row(row) for row in rows]
 
-    def catalog_count(
-        self,
-        *,
-        search: str | None = None,
-        direction: str | None = None,
-        issued_from: dt.date | None = None,
-        issued_to: dt.date | None = None,
-    ) -> int:
+    def catalog_count(self, query: CatalogQuery = _NO_FILTERS) -> int:
         """How many archived messages match the same filters as :meth:`catalog`."""
-        where, params = self._catalog_filters(search, direction, issued_from, issued_to)
+        where, params = _catalog_filters(query)
         row = self._conn.execute(
             f"SELECT COUNT(*) AS n FROM messages{where}", params
         ).fetchone()
         return int(row["n"])
-
-    @staticmethod
-    def _catalog_filters(
-        search: str | None,
-        direction: str | None,
-        issued_from: dt.date | None,
-        issued_to: dt.date | None,
-    ) -> tuple[str, list[object]]:
-        clauses: list[str] = []
-        params: list[object] = []
-        if search:
-            clauses.append("(number LIKE ? OR partner_name LIKE ?)")
-            like = f"%{search}%"
-            params += [like, like]
-        if direction:
-            clauses.append("direction = ?")
-            params.append(direction)
-        if issued_from is not None:
-            clauses.append("issue_date >= ?")
-            params.append(issued_from.isoformat())
-        if issued_to is not None:
-            clauses.append("issue_date <= ?")
-            params.append(issued_to.isoformat())
-        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        return where, params
 
     def distinct_cifs(self) -> list[str]:
         """Every CIF that appears in the archive, sorted — for the Settings UI.
@@ -597,6 +660,67 @@ class Archive:
             self._conn.execute(
                 "DELETE FROM failures WHERE last_failed_at < ?", (cutoff,)
             )
+
+
+def _order_clause(order_by: str, descending: bool) -> str:
+    """The ``ORDER BY`` for one sort key — whitelisted, blanks last, unique.
+
+    Two details the caller must not have to remember. Rows with no value sort
+    last in *both* directions, which is what the fixed order always did with
+    ``issue_date IS NULL``; and ``message_id`` closes every ordering, because
+    without a unique final key ``LIMIT``/``OFFSET`` paging over a non-unique
+    sort column duplicates and skips rows between pages.
+    """
+    if order_by not in _SORT_EXPR:
+        raise ValueError(f"cannot sort the catalog by {order_by!r}")
+    expr = _SORT_EXPR[order_by]
+    return (
+        f"ORDER BY {expr} IS NULL, {expr} "
+        f"{'DESC' if descending else 'ASC'}, message_id DESC"
+    )
+
+
+def _catalog_filters(query: CatalogQuery) -> tuple[str, list[object]]:
+    """Build the ``WHERE`` fragment and its parameters for one query."""
+    clauses: list[str] = []
+    params: list[object] = []
+
+    def contains(expr: str, needle: str | None) -> None:
+        if needle:
+            clauses.append(f"{expr} LIKE ?")
+            params.append(f"%{needle}%")
+
+    if query.search:
+        clauses.append("(number LIKE ? OR partner_name LIKE ?)")
+        params += [f"%{query.search}%"] * 2
+    contains("number", query.number)
+    contains("partner_name", query.partner)
+    contains(_FROM_CIF, query.from_cif)
+    contains(_TO_CIF, query.to_cif)
+    if query.directions is not None:
+        # "IN ()" is a syntax error, so an empty selection is spelled out as
+        # the false constant rather than left to SQLite to reject.
+        if query.directions:
+            clauses.append(f"direction IN ({', '.join('?' * len(query.directions))})")
+            params += sorted(query.directions)
+        else:
+            clauses.append("0")
+    if query.issued_from is not None:
+        clauses.append("issue_date >= ?")
+        params.append(query.issued_from.isoformat())
+    if query.issued_to is not None:
+        clauses.append("issue_date <= ?")
+        params.append(query.issued_to.isoformat())
+    # created_at is a full timestamp; comparing its date is what makes an
+    # upper bound mean "everything uploaded that day" rather than "by midnight".
+    if query.uploaded_from is not None:
+        clauses.append("date(created_at) >= ?")
+        params.append(query.uploaded_from.isoformat())
+    if query.uploaded_to is not None:
+        clauses.append("date(created_at) <= ?")
+        params.append(query.uploaded_to.isoformat())
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params
 
 
 def _entry_from_row(row: sqlite3.Row) -> CatalogEntry:

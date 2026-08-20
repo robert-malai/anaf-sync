@@ -1,4 +1,4 @@
-"""Equal-column grids that re-flow on the width they are handed.
+"""Layouts that re-flow on the width they are handed.
 
 A ``QLayout`` subclass rather than ``resizeEvent`` arithmetic, so the Setări
 form keeps the one rule its elastic layout is built on (DESIGN.md §10). Two
@@ -6,6 +6,10 @@ users, both keyed to :data:`WIDE_BREAKPOINT` so the window has **one** reflow
 moment across its 760–1200 range rather than two competing ones:
 :class:`ArtifactGrid` for *Fișiere salvate* (3-up ⇄ 5-up) and the variable
 reference panel's group columns (1-up ⇄ 3-up, see :mod:`template_help`).
+
+:class:`WrapRow` is the odd one out — it packs items at their *natural* widths
+and wraps, which is what a row of filter chips needs: equal columns would make
+"Doar întârziate" as wide as "Emisă: 08.07.2026 – 18.07.2026".
 
 The artifact counts are deliberately **only 3 and 5**: five artifacts in four
 columns strand one card alone on a second row, and 3 + 2 and 5 are the only
@@ -25,6 +29,7 @@ __all__ = [
     "ArtifactGrid",
     "ColumnGrid",
     "GroupGrid",
+    "WrapRow",
     "clear_layout",
     "column_count",
     "group_column_count",
@@ -170,12 +175,94 @@ class GroupGrid(ColumnGrid):
         return group_column_count(width)
 
 
+class WrapRow(QLayout):
+    """Left-to-right at natural widths, wrapping onto a new line when full."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._items: list[QLayoutItem] = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(SPACING)
+
+    # -- the QLayout contract -------------------------------------------------
+
+    def addItem(self, item: QLayoutItem) -> None:  # noqa: N802 — Qt override
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 — Qt override
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 — Qt override
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802 — Qt override
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 — Qt override
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 — Qt override
+        return self._layout(QRect(0, 0, width, 0), apply=False)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 — Qt override
+        super().setGeometry(rect)
+        self._layout(rect, apply=True)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 — Qt override
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802 — Qt override
+        """One item wide: the row may wrap to any depth, so it never floors width."""
+        widest = max(
+            (item.sizeHint().width() for item in self._items),
+            default=0,
+        )
+        return QSize(widest, self.heightForWidth(max(widest, 1)))
+
+    # -- layout ---------------------------------------------------------------
+
+    def _layout(self, rect: QRect, *, apply: bool) -> int:
+        """Place (or just measure) the items; returns the total height."""
+        if not self._items:
+            return 0
+        x, y = rect.x(), rect.y()
+        line_height = 0
+        for item in self._items:
+            size = item.sizeHint()
+            if line_height and x + size.width() > rect.right():
+                x = rect.x()
+                y += line_height + SPACING
+                line_height = 0
+            if apply:
+                item.setGeometry(QRect(x, y, size.width(), size.height()))
+            x += size.width() + SPACING
+            line_height = max(line_height, size.height())
+        return y + line_height - rect.y()
+
+
 def clear_layout(layout: QLayout) -> None:
-    """Remove and delete every widget in ``layout`` (for rebuild-in-place views)."""
+    """Remove and delete every widget in ``layout`` (for rebuild-in-place views).
+
+    Un-parented *before* it is scheduled for deletion, not just after. Taking a
+    widget out of a layout leaves it a child of the same parent, keeping its
+    last geometry and still painting there until the delete is processed — so
+    a rebuilt pane briefly renders the old view underneath the new one. Nested
+    layouts are drained too, or the widgets inside them survive both steps.
+    """
     while layout.count():
         item = layout.takeAt(0)
         if item is None:
             continue
+        if (child := item.layout()) is not None:
+            clear_layout(child)
         widget = item.widget()
         if widget is not None:
+            widget.setParent(None)
             widget.deleteLater()

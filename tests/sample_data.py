@@ -4,6 +4,11 @@ One builder, ``seed_sample_archive``, produces exactly the six rows the mockup
 shows (`#1b`): a failing message pinned on top, an amber delayed invoice
 (FF-88214, issued Saturday 11 iul., uploaded Monday 20 iul. → 6 working days),
 and four normal rows.
+
+The rows span **two followed CIFs and both directions** on purpose. AS-1042 is
+the one sent invoice, so it is the row where the followed CIF sits in *De la*
+and the partner's in *Pentru* — the mirror of every other row, and the only way
+a test of the two role columns can tell the rule from a coincidence.
 """
 
 from __future__ import annotations
@@ -12,6 +17,9 @@ import datetime as dt
 from pathlib import Path
 
 from anaf_sync.state import Archive, CatalogEntry
+
+#: The two CIFs the sample archive follows, matching the Setări mockup.
+OWN_CIFS = ("12345678", "87654321")
 
 
 def _entry(
@@ -23,17 +31,19 @@ def _entry(
     issue: dt.date,
     created: dt.datetime | None,
     total: float,
+    cif: str = OWN_CIFS[0],
+    partner_cif: str = "14338501",
 ) -> CatalogEntry:
     return CatalogEntry(
         message_id=message_id,
-        cif="12345678",
+        cif=cif,
         direction=direction,
         base_path=f"/archive/{message_id}",
         artifacts=["zip", "pdf"],
         issue_date=issue,
         number=number,
         partner_name=partner,
-        partner_cif="87654321",
+        partner_cif=partner_cif,
         total=total,
         currency="RON",
         message_type=(
@@ -49,6 +59,7 @@ def seed_sample_archive(path: Path) -> None:
         archive.record(
             _entry(
                 "3210447811",
+                partner_cif="14338501",
                 direction="received",
                 number="FCT-2107",
                 partner="ELECTROMONTAJ CARPAȚI S.R.L.",
@@ -60,6 +71,8 @@ def seed_sample_archive(path: Path) -> None:
         archive.record(
             _entry(
                 "3210447812",
+                cif=OWN_CIFS[1],
+                partner_cif="11694562",
                 direction="received",
                 number="2026-0713",
                 partner="DISTRIGAZ VEST S.A.",
@@ -71,6 +84,7 @@ def seed_sample_archive(path: Path) -> None:
         archive.record(
             _entry(
                 "3210447813",
+                partner_cif="22518743",
                 direction="sent",
                 number="AS-1042",
                 partner="MOBILA PRODEX S.R.L.",
@@ -84,6 +98,7 @@ def seed_sample_archive(path: Path) -> None:
         archive.record(
             _entry(
                 "3210447814",
+                partner_cif="31274865",
                 direction="received",
                 number="FF-88214",
                 partner="BIROTICA PLUS S.R.L.",
@@ -95,6 +110,8 @@ def seed_sample_archive(path: Path) -> None:
         archive.record(
             _entry(
                 "3210447815",
+                cif=OWN_CIFS[1],
+                partner_cif="18293401",
                 direction="received",
                 number="FCT-1001",
                 partner="ACME CONSTRUCT S.R.L.",

@@ -440,7 +440,8 @@ a toolbar button in Facturi, and carries its own geometry key and its own,
 smaller size range — a 760×620 design minimum (the width floor is *derived*:
 the window asks the form, whose narrowest measurable element is the variable
 reference panel, so on wide-font platforms the minimum sits above 760 — #1)
-up to a 1200×780 maximum, against the catalog's 980×620 minimum and no
+up to a 1200×780 maximum, against the catalog's 1160×620 design size — whose
+width floor is derived the same way, from the columns rather than the form — and no
 maximum at all — because the two have opposite appetites for space, which the
 next paragraphs make precise.
 
@@ -453,8 +454,10 @@ roles:
 
 - *Anchored* (fixed on at least one axis): the details pane keeps its fixed
   width against the right edge (it is a reading pane — widening it would only
-  stretch line lengths); toolbar, period row, footer and save bar are
-  full-width, fixed-height bands whose buttons/chips keep their natural size.
+  stretch line lengths); toolbar, active-filter bar, footer and save bar are
+  full-width, fixed-height bands whose contents keep their natural size. The
+  filter bar's height is *zero* when nothing is filtered, which is why moving
+  the filters into the header cost the default view no chrome at all.
 - *Stretching* (absorbs the slack): exactly one element per window takes both
   extra axes. On Facturi it is the catalog table — extra height shows more
   rows, extra width feeds the Partener column, the only stretch section (the
@@ -463,6 +466,71 @@ roles:
   area takes the extra height (its scrollbar disappearing once the form fits)
   and the field column takes the extra width beside the fixed 150px label
   column.
+
+**The filters live on the columns they filter.** Facturi carried a row of
+direction chips and a period row above the table; both are gone into the header,
+where clicking a column label sorts by it and clicking its ▽ opens that column's
+filter. The rearrangement is not cosmetic — it resolves three things the chips
+could not. A chip row grows linearly with the number of filters, and the column
+set had outgrown it; "Probleme" was one control doing two unrelated jobs, which
+split cleanly once each half could sit on the column that carries its evidence
+(*întârziate* on Încărcată, whose cell already turns amber; *eșuate* as a value
+of the Direcție checklist); and search, the one filter spanning two columns
+(`number` OR `partner_name`), is exactly the one with no column to move to — so
+it keeps the toolbar to itself, and the toolbar keeps a reason to exist.
+
+The cost of header filters is that an active one is invisible once its popover
+closes, and a catalog silently missing rows is worse than one that does not
+filter at all. The **active-filter bar** pays it: every active filter is echoed
+under the search field as a removable label. `FilterState` — a frozen dataclass that touches no
+widget — is the single value all three readers derive from — the model's query, the header's set
+of lit funnels, the bar's chips — so they cannot disagree about whether a filter
+is on.
+
+**Facturi derives its width floor too.** Every fixed section sizes itself from
+the platform's font — its label plus the two marks the header now paints — so the
+columns are wider than the px the mockup was measured at, and by a different
+amount on each desktop. A constant minimum would squeeze Partener, the column a
+reader actually scans, hardest on exactly the machines whose metrics are widest.
+The window instead floors its width at what the measured columns need plus 200px
+of Partener plus the details pane, which is the same move Setări makes from its
+variable reference panel — and the reason the px in the handoff are documented as
+floors rather than targets.
+
+**Sorting is SQL, not a proxy model.** `CatalogModel` pages through `fetchMore`,
+so a `QSortFilterProxyModel` would order only the rows already fetched and
+re-shuffle the list under the reader as they scroll. `Archive.catalog` takes an
+`order_by` validated against a whitelist — the value is spliced into `ORDER BY`,
+so nothing outside that table may reach it — and closes every ordering with
+`message_id DESC`. That tiebreak is not tidiness: without a unique final key,
+`LIMIT`/`OFFSET` paging over a non-unique sort column duplicates and skips rows
+between pages. Blanks sort last in both directions, which is what the fixed
+order always did with `issue_date IS NULL`. Direcție is deliberately absent from
+the whitelist: three values make a filter, not an order.
+
+**De la CIF / Pentru CIF are roles, derived per row.** An invoice goes *from*
+one CIF *to* another, and which of them is the followed one depends on
+`direction`: on a received invoice the partner issues and you receive, on a sent
+one they swap. Two absolute columns beat "CIF" plus "CIF partener" because the
+reader never has to hold the direction in their head and do the substitution —
+and the followed CIF is painted at full strength against the counterparty's
+muted, so which side of the flow you are on is legible without reading digits.
+Neither is stored: both are `CASE direction WHEN 'sent' THEN … END` in SQL, with
+`state.role_cifs` as the Python mirror for rendering and a test pinning the two
+statements together. A failing message has neither — nothing was downloaded to
+read a partner CIF from, and the `failures` table records no CIF of its own.
+
+**The details pane collapses when it has nothing to say.** With no selection it
+folds to a 30px rail and the table takes the width back, which is exactly when
+the reader wants it: scanning. Selecting a row opens it; re-clicking that row
+deselects and folds it again (Qt's single-selection mode offers no other way
+out); the pane's own `›` pins it shut, and that pin is a *preference* — it
+survives selections and restarts, because a fold that the next click undid would
+make both the button and the saved state meaningless. One consequence reaches
+the model: the selection now survives a filter change unless the row it names
+was filtered out. Clearing it unconditionally, as the first cut did, throws away
+a pane mid-read — and with an auto-collapsing pane it makes the whole right side
+flap on every keystroke in the search field.
 
 **Setări has a maximum size; Facturi does not.** The catalog is unbounded — more
 width and height are always more invoices and longer partner names, so the only
