@@ -170,6 +170,16 @@ generated commit list — the fallback, not the intent. PyPI has no notes field:
 the `Changelog` project URL points every version's project page at the
 releases, so the prose keeps one home.
 
+**A tag that reached PyPI without a page gets one written retroactively** —
+v0.5.0, v0.6.0 and v0.7.0 all did, each time because one platform's bundle
+failed after publication. `release.yml` no longer skips the release for that
+(`github-release` runs on `publish` succeeding and attaches whatever built),
+but when a page has to be made by hand from an old run's artifacts, **pass
+`--latest=false`**: GitHub picks "Latest" by *creation date*, not by version,
+so a retroactive page for an older tag silently promotes the broken release
+over the fix. Give its notes the preamble v0.6.0 and v0.7.0 carry — which
+version to use instead, and which downloads never existed.
+
 Release notes are the one place the English-only rule bends: they are the
 operator-facing announcement, so a Romanian lead line is fine when the release
 is one operators act on (see `release-notes/v0.2.1.md`).
