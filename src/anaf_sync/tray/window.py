@@ -88,13 +88,21 @@ from .models import (
 )
 from .theme import Theme, current_theme, window_qss
 
-__all__ = ["MainWindow", "reveal_in_file_manager"]
+__all__ = ["MAX_MINIMUM_WIDTH", "MainWindow", "reveal_in_file_manager"]
 
 _WIDTH = 1160
 _HEIGHT = 620
-#: What Partener must still get at the window's minimum width. It is the column
-#: a reader scans, and below this a company name is an ellipsis.
+#: What Partener should still get at the window's minimum width. It is the
+#: column a reader scans, and below this a company name is an ellipsis.
 _PARTNER_FLOOR = 200
+#: And the ceiling on that derivation. A minimum wider than this cannot be
+#: shown whole on a 1366×768 laptop — still the commonest small screen, and the
+#: kind of machine the Windows field installs run on. The sections measure
+#: themselves in the platform's font, and on a wide one they add up to half as
+#: much again as they do here, so without a ceiling the window becomes one the
+#: user cannot see the edge of. Past it, an elided header label and a
+#: horizontal scrollbar are the better failure.
+MAX_MINIMUM_WIDTH = 1320
 #: The left column's own margins, both sides.
 _MARGIN = 16
 
@@ -403,6 +411,9 @@ class MainWindow(QMainWindow):
         self._header = CatalogHeader(table)
         table.setHorizontalHeader(self._header)
         self._header.setMinimumSectionSize(_MIN_SECTION)
+        # Past the width cap a label may not fit its section; ending it in an
+        # ellipsis reads as "there is more", where clipping reads as a typo.
+        self._header.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._header.setSortIndicator(self._model.sort_column, self._model.sort_order)
         self._header.sortIndicatorChanged.connect(self._model.sort)
         self._header.filter_requested.connect(self._open_filter)
@@ -432,13 +443,16 @@ class MainWindow(QMainWindow):
         than the px the mockup was measured at. A constant minimum would
         therefore squeeze Partener hardest on exactly the machines whose
         metrics are widest, so the floor is *derived* instead, the way Setări
-        derives its own from the variable reference panel (DESIGN.md §10).
+        derives its own from the variable reference panel (DESIGN.md §10) —
+        but *capped*, because a floor that outgrows the screen is worse than a
+        squeezed column. See :data:`MAX_MINIMUM_WIDTH`.
         """
         if self._table is None:
             return _WIDTH
         sections = sum(self._table.columnWidth(col) for col in _COL_CONTENT)
         chrome = _MARGIN * 2 + PANE_WIDTH + 1  # margins + pane + its border
-        return max(_WIDTH, sections + _PARTNER_FLOOR + chrome)
+        wanted = max(_WIDTH, sections + _PARTNER_FLOOR + chrome)
+        return min(wanted, MAX_MINIMUM_WIDTH)
 
     def _label(self, col: int) -> str:
         return str(self._model.headerData(col, self._header.orientation()))

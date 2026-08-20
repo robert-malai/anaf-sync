@@ -9,9 +9,11 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QModelIndex, QPoint, QRect, Qt  # noqa: E402
+from PySide6.QtGui import QFont  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QAbstractItemView,
+    QApplication,
     QHeaderView,
     QStackedWidget,
 )
@@ -42,7 +44,11 @@ from anaf_sync.tray.models import (  # noqa: E402
     CatalogModel,
 )
 from anaf_sync.tray.period import ALL, CUSTOM, THIS_MONTH, DateSpan  # noqa: E402
-from anaf_sync.tray.window import MARK_SLOT, MainWindow  # noqa: E402
+from anaf_sync.tray.window import (  # noqa: E402
+    MARK_SLOT,
+    MAX_MINIMUM_WIDTH,
+    MainWindow,
+)
 
 _NOW = dt.datetime(2026, 7, 20, 12, 0, tzinfo=dt.UTC)
 
@@ -549,8 +555,13 @@ def test_window_design_size_is_the_minimum(qtbot: object, tmp_path: Path) -> Non
     # platform's font), so it is at least the design size, never below it.
     assert win.minimumWidth() >= 1160
     assert win.minimumHeight() == 620
-    win.resize(1400, 900)  # a fixed-size window would refuse this
-    assert (win.width(), win.height()) == (1400, 900)
+    # Relative to the floor, never a constant: the floor is derived from the
+    # platform's font metrics, and a hard-coded 1400 is *below* it on Windows —
+    # where the window then refuses to shrink and the assertion reads as a
+    # resize failure rather than the font difference it is.
+    wider = (win.minimumWidth() + 200, 900)
+    win.resize(*wider)  # a fixed-size window would refuse this
+    assert (win.width(), win.height()) == wider
 
 
 def test_window_geometry_persists_across_instances(
@@ -1159,3 +1170,33 @@ def test_resizing_a_column_does_not_also_sort_it(qtbot: object, tmp_path: Path) 
 
     assert header.sectionSize(COL_NUMBER) > before  # the resize took effect
     assert win._model.sort_column == sorted_by  # and nothing else did
+
+
+def test_minimum_width_never_outgrows_a_small_laptop(
+    qtbot: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The derived floor is capped, or a wide UI font makes the window unshowable.
+
+    Windows measures the fixed sections about half as much again as macOS does,
+    which put the uncapped floor at 1515px — wider than a 1366×768 laptop, so
+    the window could not be seen whole on the machines the field installs run
+    on. A squeezed Partener is the better failure.
+    """
+    seed_sample_archive(tmp_path / "state.db")
+    app = QApplication.instance()
+    assert app is not None
+    original = app.font()
+    wide = QFont(original)
+    wide.setPointSizeF(original.pointSizeF() * 2)  # stand in for a wide UI font
+    app.setFont(wide)
+    try:
+        win = MainWindow(state_path=tmp_path / "state.db")
+        qtbot.addWidget(win)
+        sections = sum(
+            win._table.columnWidth(col) for col in range(win._model.columnCount())
+        )
+        # The font really did inflate the columns — otherwise this proves nothing.
+        assert sections > 900
+        assert win.minimumWidth() <= MAX_MINIMUM_WIDTH
+    finally:
+        app.setFont(original)

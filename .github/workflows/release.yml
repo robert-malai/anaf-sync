@@ -96,8 +96,17 @@ jobs:
   # rather than attaching themselves, so the release is never created empty by
   # whichever job happened to finish first. Re-runnable: an existing release for
   # the tag is updated in place rather than failing.
+  #
+  # It waits for `bundle` but does not *require* it. Three tags (v0.5.0, v0.6.0,
+  # v0.7.0) reached PyPI and then never got a page, because one platform's
+  # bundle failed and skipped this job — leaving the package installable with
+  # nothing announcing it, which is the exact failure the PyPI-first ordering
+  # exists to prevent, arrived at from the other side. A missing bundle is now
+  # a missing attachment: the release is created with whatever built, and the
+  # run still reports failure so the gap is visible and the tag re-runnable.
   github-release:
     needs: [publish, bundle]
+    if: always() && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write  # create the release, attach the distribution to it
@@ -109,11 +118,14 @@ jobs:
         with:
           name: dist
           path: dist/
+      # Whatever built. A platform whose bundle failed simply has no artifact
+      # here, and must not take the release down with it.
       - uses: actions/download-artifact@v8
         with:
           pattern: anaf-sync-tray-*
           merge-multiple: true
           path: dist/
+        continue-on-error: true
       - name: Assemble the release notes
         id: notes
         env:
