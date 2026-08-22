@@ -42,12 +42,22 @@ def test_windows_run_command_quotes() -> None:
     )
 
 
-def test_tray_command_uses_frozen_executable(
-    monkeypatch: pytest.MonkeyPatch,
+def test_tray_command_picks_the_tray_out_of_a_frozen_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Never `sys.executable`: inside a bundle, that is the CLI.
+
+    `anaf-sync tray install` is a CLI subcommand, so when the Windows installer
+    ticks the autostart box it is `anaf-sync.exe` that runs it. Registering
+    `sys.executable` would put a console program in the Run key.
+    """
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", "/Apps/anaf-sync-tray")
-    assert tray_command() == ["/Apps/anaf-sync-tray"]
+    suffix = ".exe" if sys.platform == "win32" else ""
+    tray = tmp_path / f"anaf-sync-tray{suffix}"
+    tray.touch()
+    monkeypatch.setattr(sys, "executable", str(tmp_path / f"anaf-sync{suffix}"))
+    monkeypatch.setattr(scheduling.shutil, "which", lambda _name: None)
+    assert tray_command() == [str(tray.resolve())]
 
 
 def test_tray_command_resolves_console_script(

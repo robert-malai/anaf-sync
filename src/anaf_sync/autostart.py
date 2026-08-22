@@ -39,12 +39,15 @@ class AutostartError(RuntimeError):
 def tray_command() -> list[str]:
     """The command that launches the tray, resolved for a login-time context.
 
-    Frozen (PyInstaller) builds are their own executable; otherwise resolve the
-    ``anaf-sync-tray`` console script the way :mod:`scheduling` resolves
-    ``anaf-sync`` — so autostart works without any venv activation.
+    Always resolved by name, never as ``sys.executable``. It is *the CLI* that
+    runs ``anaf-sync tray install`` — including from inside a frozen bundle,
+    where the installer invokes it — so ``sys.executable`` is `anaf-sync`, and
+    registering that at login would greet the operator with a console program
+    printing its help. :func:`~anaf_sync.scheduling.resolve_script` already
+    prefers the sibling when frozen, which is exactly where the bundle's tray
+    sits; unfrozen it finds the console script, so autostart works without any
+    venv activation either way.
     """
-    if getattr(sys, "frozen", False):
-        return [sys.executable]
     script = resolve_script("anaf-sync-tray")
     if script is None:
         raise AutostartError(

@@ -57,6 +57,20 @@ anaf-sync = "anaf_sync.cli:main"
 [project.gui-scripts]
 anaf-sync-tray = "anaf_sync.tray:main"
 
+# Intel macOS only, and only for this project's own resolution — never for
+# anyone doing `pip install anaf-sync`. cryptography 49 dropped its x86_64 mac
+# wheels, so the Intel bundle runner built it from sdist against Homebrew's
+# OpenSSL while the frozen app carried the Python runtime's older
+# libssl.3.dylib; the two collide on one name in Contents/Frameworks and the
+# CLI died on a missing symbol at import. 48.0.1 is the last release with a
+# macOS wheel that covers x86_64 (universal2), and it links OpenSSL statically,
+# so there is no libssl to collide. Revisit at each release: this holds Intel
+# users on a line upstream has stopped supporting.
+[tool.uv]
+constraint-dependencies = [
+    "cryptography<49 ; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

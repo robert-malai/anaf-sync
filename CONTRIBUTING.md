@@ -89,7 +89,7 @@ not the intent.
 The `v*` tag is what does the rest: [release.yml](.github/workflows/release.yml)
 re-runs the gates, checks the tag against `pyproject.toml`'s version, publishes
 to PyPI via trusted publishing (OIDC, no stored token), and only then creates
-the GitHub release with the sdist, the wheel, and the three tray bundles
+the GitHub release with the sdist, the wheel, and the desktop packages
 attached. PyPI first, deliberately — the release is the announcement, so it
 must never point at a version `pip install` cannot reach yet. The bundles come
 from [release-tray.yml](.github/workflows/release-tray.yml), which `release.yml`

@@ -225,3 +225,61 @@ def test_cadence_readback_is_silent_when_nothing_is_installed(
     monkeypatch.setattr(scheduling, "_launchd_plist_path", lambda: tmp_path / "none")
     assert _systemd_cadence() is None
     assert _launchd_cadence() is None
+
+
+# -- console-script resolution ---------------------------------------------------
+
+
+def _fake_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """A sibling executable next to `sys.executable`, and a different one on PATH."""
+    name = "anaf-sync.exe" if scheduling.sys.platform == "win32" else "anaf-sync"
+    bundle, elsewhere = tmp_path / "bundle", tmp_path / "elsewhere"
+    bundle.mkdir()
+    elsewhere.mkdir()
+    sibling, on_path = bundle / name, elsewhere / name
+    sibling.touch()
+    on_path.touch()
+    monkeypatch.setattr(scheduling.sys, "executable", str(bundle / "anaf-sync-tray"))
+    monkeypatch.setattr(scheduling.shutil, "which", lambda _n: str(on_path))
+    return sibling, on_path
+
+
+def test_resolve_script_prefers_path_when_not_frozen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _sibling, on_path = _fake_layout(tmp_path, monkeypatch)
+    monkeypatch.delattr(scheduling.sys, "frozen", raising=False)
+    assert scheduling.resolve_script("anaf-sync") == on_path.resolve()
+
+
+def test_resolve_script_prefers_its_own_bundle_when_frozen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A frozen bundle is self-contained: a stale pip install must not win.
+
+    Otherwise an operator with both would get the bundle's tray driving some
+    other version's CLI — against the same archive DB.
+    """
+    sibling, _on_path = _fake_layout(tmp_path, monkeypatch)
+    monkeypatch.setattr(scheduling.sys, "frozen", True, raising=False)
+    assert scheduling.resolve_script("anaf-sync") == sibling.resolve()
+
+
+def test_resolve_script_falls_back_to_the_sibling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sibling, _on_path = _fake_layout(tmp_path, monkeypatch)
+    monkeypatch.delattr(scheduling.sys, "frozen", raising=False)
+    monkeypatch.setattr(scheduling.shutil, "which", lambda _n: None)
+    assert scheduling.resolve_script("anaf-sync") == sibling.resolve()
+
+
+def test_resolve_script_gives_up_rather_than_guessing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(scheduling.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setattr(scheduling.shutil, "which", lambda _n: None)
+    monkeypatch.delattr(scheduling.sys, "frozen", raising=False)
+    assert scheduling.resolve_script("anaf-sync") is None
+    with pytest.raises(ScheduleError, match="cannot locate"):
+        scheduling.sync_executable()
