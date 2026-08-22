@@ -33,6 +33,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          # Its own cache namespace, so a push to main and a tag pushed
+          # moments later — which is exactly how a release goes out — do not
+          # race each other to reserve one key. See release.yml's note.
+          cache-suffix: ci
       # PySide6's offscreen platform plugin needs these shared libraries.
       - name: Qt system libraries (Linux)
         if: runner.os == 'Linux'
