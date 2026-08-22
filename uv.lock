@@ -13,7 +13,7 @@ constraints = [{ name = "cryptography", marker = "platform_machine == 'x86_64' a
 
 [[package]]
 name = "anaf-sync"
-version = "0.7.1"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "anafpy" },
