@@ -656,13 +656,50 @@ autostart works from a venv install and from a bundle alike.
 **Bundling** (`packaging/tray.spec`, one PyInstaller spec with platform
 conditionals) freezes the app into a menu-bar-only macOS `.app` (`LSUIElement`,
 so no Dock icon), a windowed Windows exe, and a Linux one-dir binary, excluding
-the Qt modules the tray never touches to keep the size down. `release-tray.yml`
-runs the full gates with the `tray` extra (the PySide6 code exercised headless
-via `QT_QPA_PLATFORM=offscreen`) before building on each OS; it is a reusable
-workflow that `release.yml` calls on a `v*` tag and that can also be dispatched
-by hand to check the freeze still works (§9 — it uploads artifacts and never
-touches the release itself). Code signing and
-notarization are deliberately out of scope for now — the bundles are unsigned
-and trigger the usual first-run OS warnings, documented in the README with the
-right-click-open workaround; signing is follow-up work before the bundles are
-recommended for wide distribution.
+the Qt modules the tray never touches to keep the size down.
+
+The frozen directory carries **two** executables — `anaf-sync-tray` and
+`anaf-sync`. That is not a convenience: the tray does no work in-process, so
+every button it offers goes through `runner.CliRunner` to the CLI, and
+`scheduling.py` registers that same CLI with the OS scheduler. A tray-only
+bundle would ship a "Sincronizează acum" button that cannot work. Nothing in
+the app had to learn about bundles for this: `resolve_script` already looked
+next to `sys.executable`, which is where `COLLECT` (and `Contents/MacOS/`) puts
+the sibling. The one change it did need is an *ordering* one — frozen, the
+sibling now outranks PATH, so a bundle plus a stale `pip install` cannot pair
+one version's tray with another's CLI over a single archive.
+
+**Packaging** wraps that directory in the form each platform expects, and both
+wrappers are thin by design — they add distribution, never behaviour.
+`windows-setup.iss` (Inno Setup) produces a per-user installer: everything the
+app registers is per-user already (an `HKCU\...\Run` value, a user schtasks
+task, a profile-local archive and token store), so an elevated per-machine
+install would register the schedule for the administrator who ran it rather
+than the operator who uses it. It calls `anaf-sync tray install` and
+`schedule install` rather than writing the registry or calling schtasks itself,
+so those remain single implementations that `... status` can still read back —
+and it reverses both on uninstall, because a removed install that leaves a task
+pointing at a deleted exe fails forever with nothing left on disk to explain
+it. It never deletes config or archive data. `make_dmg.sh` uses `hdiutil`
+alone; what earns a `.dmg` over a `.zip` is the `/Applications` symlink beside
+the app, and that needs no tooling to produce.
+
+macOS ships one package per architecture. PySide6 distributes a *universal2*
+wheel, so the arch is decided entirely by the runner — which makes a
+wrong-runner build a working app of the wrong architecture, shipped silently
+under the other one's name. `release-tray.yml` therefore asserts `lipo -archs`
+against the matrix rather than trusting the label, and asserts the two
+`Info.plist` keys that `BUNDLE`'s argument order silently decides
+(`CFBundleExecutable`, and the absence of `LSBackgroundOnly`) — both are
+invisible until someone double-clicks the shipped app.
+
+`release-tray.yml` runs the full gates with the `tray` extra (the PySide6 code
+exercised headless via `QT_QPA_PLATFORM=offscreen`) before building on each OS;
+it is a reusable workflow that `release.yml` calls on a `v*` tag and that can
+also be dispatched by hand to check the freeze still works (§9 — it uploads
+artifacts and never touches the release itself). Code signing and notarization
+are deliberately out of scope for now — the packages are unsigned and trigger
+the usual first-run OS warnings, documented in the README per platform;
+signing is follow-up work before they are recommended for wide distribution,
+and an unsigned *installer* is treated more harshly than an unsigned archive,
+so it raises the value of doing it.

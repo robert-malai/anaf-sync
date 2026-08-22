@@ -383,11 +383,65 @@ anaf-sync tray status
 anaf-sync tray remove
 ```
 
-Alternativ, descarcă un pachet gata compilat de la
+### Pachete gata compilate
+
+Alternativ, descarcă un pachet gata făcut din
 [secțiunea Releases](https://github.com/robert-malai/anaf-sync/releases/latest)
-(nu necesită Python). Pachetele nu sunt semnate deocamdată, așa că la prima
-pornire sistemul afișează un avertisment: pe macOS deschide-l cu click‑dreapta
-→ „Open" o singură dată; pe Windows alege „More info" → „Run anyway".
+— nu trebuie să instalezi nici Python, nici PySide6.
+
+**Windows** — `anaf-sync-setup-X.Y.Z.exe`
+
+Instalatorul se instalează **doar pentru utilizatorul tău**, deci nu cere
+drepturi de administrator. În timpul instalării poți bifa pornirea automată la
+logare și, opțional, sincronizarea automată la fiecare 6 ore — pe a doua las-o
+nebifată până termini configurarea și autentificarea de mai sus, altfel se
+programează o sarcină care nu are ce să facă. Dezinstalarea (Setări →
+Aplicații) scoate și sarcina programată, și pornirea automată; **arhiva de
+facturi și `config.toml` rămân neatinse** — nu se șterge nimic din ce ai
+descărcat. Există și `anaf-sync-tray-windows.zip`, aceeași aplicație fără
+instalator, pentru calculatoarele pe care nu se pot rula instalatoare.
+
+**macOS** — două imagini de disc, alege-o pe cea potrivită procesorului
+(meniul Apple → „About This Mac"):
+
+| Fișier | Pentru |
+|---|---|
+| `anaf-sync-tray-macos-arm64.dmg` | Apple Silicon (M1 și mai nou) |
+| `anaf-sync-tray-macos-x86_64.dmg` | Intel |
+
+Deschizi imaginea și tragi aplicația peste scurtătura „Applications" de lângă
+ea. Ambele cer macOS 13 sau mai nou.
+
+**Linux** — `anaf-sync-tray-linux.tar.gz`: dezarhivezi oriunde și rulezi
+`anaf-sync-tray` din folderul rezultat.
+
+Fiecare pachet conține **și** comanda `anaf-sync`, alături de aplicație:
+programarea și butonul „Sincronizează acum" o folosesc direct de acolo. Dacă
+vrei să dai comenzi în terminal (`anaf-sync init`, `anaf-sync status`),
+folosește calea completă din locul instalării:
+
+| Sistem | Calea către `anaf-sync` |
+|---|---|
+| Windows | `%LOCALAPPDATA%\Programs\anaf-sync\anaf-sync.exe` |
+| macOS | `/Applications/anaf-sync-tray.app/Contents/MacOS/anaf-sync` |
+| Linux | `anaf-sync-tray/anaf-sync`, în folderul dezarhivat |
+
+Un singur lucru rămâne în afara pachetului: **autentificarea**. Comanda de
+login e a pachetului anafpy, deci pentru ea îți trebuie uv —
+`uvx anafpy auth login ...`, ca la [Pasul 3](#pasul-3--login).
+
+#### Avertismentele de la prima pornire
+
+Pachetele **nu sunt semnate digital** deocamdată, așa că sistemul le tratează
+ca venind de la un dezvoltator necunoscut:
+
+- **Windows** — SmartScreen afișează „Windows protected your PC". Alegi
+  „More info", apoi „Run anyway".
+- **macOS** — aplicația e blocată la prima deschidere. Mergi la meniul Apple →
+  „System Settings" → „Privacy & Security", derulezi până la mesajul despre
+  `anaf-sync-tray` și apeși „Open Anyway", apoi confirmi cu parola. Se cere o
+  singură dată. (Vechiul truc cu click‑dreapta → „Open" nu mai funcționează pe
+  versiunile recente de macOS.)
 
 Pe Linux/GNOME iconițele din bară au nevoie de extensia AppIndicator
 („AppIndicator and KStatusNotifierItem Support"); pe majoritatea celorlalte

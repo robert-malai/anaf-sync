@@ -1,17 +1,20 @@
-# Build the desktop tray companion into standalone bundles for each OS.
+# Build the desktop companion into a distributable package for each OS.
 #
 # Runs the full gates with the `tray` extra (so the PySide6 UI is exercised
-# headless), then freezes the app with PyInstaller and uploads the result as a
-# per-OS artifact. Attaching those artifacts to a release is NOT done here:
-# `release.yml` calls this workflow on a `v*` tag and does the attaching in one
-# place, downstream of PyPI, so there is exactly one job that creates a release
-# and it can carry the written notes. Run it on its own (workflow_dispatch) to
-# check that the bundles still build.
+# headless), then freezes the app with PyInstaller and wraps the result in the
+# form each platform expects — a setup.exe on Windows, a .dmg on macOS, a
+# tarball on Linux — and uploads it as a per-OS artifact. Attaching those
+# artifacts to a release is NOT done here: `release.yml` calls this workflow on
+# a `v*` tag and does the attaching in one place, downstream of PyPI, so there
+# is exactly one job that creates a release and it can carry the written notes.
+# Run it on its own (workflow_dispatch) to check that the packages still build.
 #
-# Known gap (out of scope): the bundles are UNSIGNED — no macOS notarization,
-# no Windows Authenticode. Operators must use the documented right-click-open
-# workaround until signing lands. Do not recommend these bundles for wide
-# distribution before then.
+# Every package carries BOTH executables — the tray and the `anaf-sync` CLI
+# that does the work. See `packaging/tray.spec` for why that is not optional.
+#
+# Known gap (out of scope): the packages are UNSIGNED — no macOS notarization,
+# no Windows Authenticode. Operators must use the documented workaround until
+# signing lands. Do not recommend these for wide distribution before then.
 name: release-tray
 
 on:
@@ -26,8 +29,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # `include`, not a bare `os` list: macOS ships two packages and the two
+      # legs would otherwise collide on one artifact name. Runner labels move —
+      # `macos-13`, the last Intel image, is retired, and Intel now comes from
+      # the `-intel` suffix. See github.com/actions/runner-images for the
+      # current set before changing these.
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact: Linux
+          - os: windows-latest
+            artifact: Windows
+          - os: macos-latest       # Apple Silicon
+            artifact: macOS-arm64
+            arch: arm64
+          - os: macos-15-intel     # Intel
+            artifact: macOS-x86_64
+            arch: x86_64
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v8.3.0
@@ -53,23 +71,101 @@ jobs:
           uv run ruff check src tests
           uv run black --check src tests
           uv run mypy src
+      - name: Read the package version
+        id: version
+        shell: bash
+        run: |
+          version="$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          echo "value=${version}" >> "${GITHUB_OUTPUT}"
       - name: Build bundle
         run: uv run --with pyinstaller pyinstaller packaging/tray.spec --noconfirm --distpath dist --workpath build_pyi
+
+      # -- macOS: one .dmg per architecture ------------------------------------
+      # The arch check is a guard, not a formality: PySide6 ships a universal2
+      # wheel, so a bundle built on the wrong runner is a *working* app of the
+      # wrong architecture — it would ship silently under the other one's name.
+      - name: Verify the .app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app="dist/anaf-sync-tray.app"
+          plist="${app}/Contents/Info.plist"
+
+          # The arch check is a guard, not a formality: PySide6 ships a
+          # universal2 wheel, so a bundle built on the wrong runner is a
+          # *working* app of the wrong architecture — it would ship silently
+          # under the other one's name.
+          built="$(lipo -archs "${app}/Contents/MacOS/anaf-sync-tray")"
+          echo "built for: ${built} (expected ${{ matrix.arch }})"
+          case " ${built} " in
+            *" ${{ matrix.arch }} "*) ;;
+            *) echo "architecture mismatch" >&2; exit 1 ;;
+          esac
+
+          # Both executables, or the tray has nothing to spawn.
+          for exe in anaf-sync-tray anaf-sync; do
+            test -x "${app}/Contents/MacOS/${exe}" \
+              || { echo "missing executable: ${exe}" >&2; exit 1; }
+          done
+          "${app}/Contents/MacOS/anaf-sync" --version
+
+          # The two plist keys that BUNDLE's argument order decides. Both fail
+          # silently and only in the shipped .app: the wrong CFBundleExecutable
+          # launches the CLI on a double-click, and LSBackgroundOnly leaves the
+          # tray unable to focus Facturi or Setări. See packaging/tray.spec.
+          main="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${plist}")"
+          test "${main}" = "anaf-sync-tray" \
+            || { echo "CFBundleExecutable is ${main}, not the tray" >&2; exit 1; }
+          /usr/libexec/PlistBuddy -c 'Print :LSUIElement' "${plist}" >/dev/null \
+            || { echo "LSUIElement missing — the tray would take a Dock icon" >&2; exit 1; }
+          if /usr/libexec/PlistBuddy -c 'Print :LSBackgroundOnly' "${plist}" >/dev/null 2>&1; then
+            echo "LSBackgroundOnly is set — the tray could never show a window" >&2
+            exit 1
+          fi
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: cd dist && zip -r -y "anaf-sync-tray-macos.zip" "anaf-sync-tray.app"
+        run: |
+          packaging/make_dmg.sh dist/anaf-sync-tray.app \
+            "dist/anaf-sync-tray-macos-${{ matrix.arch }}.dmg"
+
+      # -- Linux ---------------------------------------------------------------
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: cd dist && tar czf "anaf-sync-tray-linux.tar.gz" "anaf-sync-tray"
+
+      # -- Windows: an Inno Setup installer, plus the portable zip -------------
+      # `upgrade`, not `install`: it installs when absent and updates when the
+      # image ships an older one, so the compiler version is the runner image's
+      # business rather than a silent input. The .iss needs Inno 6.3+ for
+      # `x64compatible`, and `choco install` on an existing older package is a
+      # no-op that would leave that unmet.
+      - name: Ensure Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco upgrade innosetup --no-progress -y
+          "C:\Program Files (x86)\Inno Setup 6" |
+            Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/anaf-sync-tray -DestinationPath dist/anaf-sync-tray-windows.zip
+        shell: bash
+        env:
+          ANAF_SYNC_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          iscc packaging/windows-setup.iss
+          # The zip stays alongside the installer: a locked-down machine that
+          # refuses to run a setup.exe can still unpack and run the bundle.
+          powershell -Command "Compress-Archive -Path dist/anaf-sync-tray -DestinationPath dist/anaf-sync-tray-windows.zip"
+
       # `release.yml` collects these with pattern `anaf-sync-tray-*` — keep the
-      # prefix if the name changes.
+      # artifact-name prefix if the names change. The setup.exe inside is named
+      # for the version, so operators can tell two downloads apart.
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: anaf-sync-tray-${{ runner.os }}
+          name: anaf-sync-tray-${{ matrix.artifact }}
           path: |
             dist/*.zip
             dist/*.tar.gz
+            dist/*.dmg
+            dist/anaf-sync-setup-*.exe

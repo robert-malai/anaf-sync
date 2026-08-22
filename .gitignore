@@ -2,6 +2,8 @@
 __pycache__/
 *.py[oc]
 build/
+# PyInstaller's --workpath, per release-tray.yml
+build_pyi/
 dist/
 wheels/
 *.egg-info
@@ -24,3 +26,5 @@ junit.xml
 
 # IDE settings (JetBrains)
 .idea/
+# ...and its Inno Setup plugin's per-configuration build settings
+.build/

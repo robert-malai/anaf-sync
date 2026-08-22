@@ -151,18 +151,28 @@ def parse_daily_at(value: str) -> tuple[int, int]:
 def resolve_script(name: str) -> Path | None:
     """Resolve a console script for use outside this shell, or ``None``.
 
-    Checks PATH first, then the script sitting next to the current interpreter
-    (the venv) — shared with :mod:`anaf_sync.autostart`, which resolves
-    ``anaf-sync-tray`` the same way.
+    Two places to look: next to the current executable, and PATH. Which comes
+    first depends on whether we are frozen.
+
+    A PyInstaller bundle ships both executables in one directory and is meant
+    to be self-contained, so there the sibling wins: an operator who also has
+    an older ``pip install`` on PATH must not get the tray of one version
+    driving the CLI of another. Unfrozen, PATH wins as before, and the sibling
+    (the venv's ``bin``/``Scripts``) is the fallback that makes the resolution
+    work without any venv activation.
+
+    Shared with :mod:`anaf_sync.autostart`, which resolves ``anaf-sync-tray``
+    the same way.
     """
-    found = shutil.which(name)
-    if found:
-        return Path(found).resolve()
-    candidate = Path(sys.executable).with_name(
+    sibling = Path(sys.executable).with_name(
         f"{name}.exe" if sys.platform == "win32" else name
     )
-    if candidate.exists():
-        return candidate.resolve()
+    if getattr(sys, "frozen", False) and sibling.exists():
+        return sibling.resolve()
+    if found := shutil.which(name):
+        return Path(found).resolve()
+    if sibling.exists():
+        return sibling.resolve()
     return None
 
 

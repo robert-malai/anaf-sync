@@ -45,6 +45,7 @@ is considered done.
 | `health.py` | pure ok/warn/err derivation, purge countdown, delay rule — shared by `status` and the tray |
 | `scheduling.py` | registers `anaf-sync sync` with schtasks / systemd user / launchd; also home of the shared script-resolution/subprocess helpers |
 | `autostart.py` | login-time autostart for the tray (`anaf-sync tray install\|remove\|status`) |
+| `packaging/` | not shipped in the wheel: `tray.spec` freezes the tray **and** the CLI into one directory (`tray_entry.py`, `cli_entry.py`), `windows-setup.iss` wraps it as a per-user Inno installer, `make_dmg.sh` as a .dmg |
 | `tray/` | the desktop companion (PySide6, `tray` extra, `anaf-sync-tray` entry point): tray icon/menu (`app`), Facturi window (`window`, `models`, `delegates`, `details`), Setări (`settings_window`, `settings_view`, `template_help`, `preview`, `config_io`), plus `status`/`theme`/`format`/`period` (importable without PySide6 at all), `filters` (widget-free derivation, but it names the model's columns so it needs the import) and `icons`/`watcher`/`runner`/`store` (Qt edges) and `macos` (the accessory activation policy — no Dock icon without a bundle). Sorting and filtering live on the table header: `header.CatalogHeader` paints the ▽ and hit-tests it, `filterpopups` holds the four popover kinds, `filterbar` echoes what is active, and `filters.FilterState` is the one pure value all three derive from. `runner.CliRunner` spawns every subcommand the tray offers — `sync`, and `reprocess --move --message-id` behind the details pane's per-invoice button — under one in-flight guard |
 
 ## Invariants — do not break
@@ -139,6 +140,27 @@ is considered done.
 - The Facturi header blob (`facturi/header/vN`) carries the sort indicator, so
   the tray's `QSettings` fixture is **per test**: one shared file would let a
   test that clicks a header change the row order every later test sees.
+- **The frozen bundle ships two executables, and the argument order in
+  `tray.spec` decides two plist keys.** `BUNDLE` takes `CFBundleExecutable`
+  from the *first* `EXECUTABLE` entry in its TOC — and `COLLECT`'s TOC leads
+  with whichever `EXE` was passed first, so a tray-second ordering produces an
+  .app that runs the CLI on a double-click. Separately, `COLLECT` inherits
+  `console` from the **last** `EXE` it saw, and a `console=True` COLLECT makes
+  `BUNDLE` write `LSBackgroundOnly` — which is not a cosmetic sibling of
+  `LSUIElement`: it pins the process to the *prohibited* activation policy, so
+  Facturi and Setări can never take focus (the failure `tray/macos.py`
+  documents). Hence CLI-first in `COLLECT`, tray-first in `BUNDLE`. Both
+  outcomes fail silently and only in the shipped .app, so `release-tray.yml`
+  asserts them on every macOS build.
+- **`resolve_script` prefers the sibling over PATH when `sys.frozen`.** A
+  bundle is self-contained by construction; unfrozen, PATH still wins. Without
+  that inversion an operator with both a bundle and an older `pip install`
+  gets one version's tray driving another version's CLI, against one archive.
+- macOS bundles are built per architecture and **`macos-13` is retired** —
+  Intel comes from `macos-15-intel`. PySide6 ships a *universal2* wheel, so a
+  bundle built on the wrong runner is a working app of the wrong arch that
+  would ship silently under the other one's name; `release-tray.yml` runs
+  `lipo -archs` rather than trusting the runner label.
 - anafpy's API is best learned from the installed source under
   `.venv/lib/python3.12/site-packages/anafpy/` — its docstrings are the spec.
 
@@ -147,7 +169,8 @@ is considered done.
 A `v*` tag drives everything: `release.yml` re-runs the gates, checks the tag
 against `pyproject.toml`'s version, publishes to PyPI via trusted publishing
 (OIDC, no stored token), and only then creates the GitHub release with the
-sdist, the wheel, and the three tray bundles attached. PyPI first, deliberately
+sdist, the wheel, and the desktop packages attached (a Windows setup.exe
+and zip, a .dmg per macOS architecture, a Linux tarball). PyPI first, deliberately
 — the release is the announcement, so it must never point at a version
 `pip install` cannot reach yet. `release-tray.yml` is a **reusable** workflow
 (`workflow_call` + `workflow_dispatch`) that only builds and uploads bundles;
