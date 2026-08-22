@@ -52,6 +52,10 @@ jobs:
         with:
           python-version: "3.13"
           enable-cache: true
+          # Its own cache namespace: this workflow runs concurrently with
+          # release.yml's `gates`, which otherwise derives the same key on
+          # Linux and races it. See the note there.
+          cache-suffix: bundle
       - name: Qt system libraries (Linux)
         if: runner.os == 'Linux'
         run: |

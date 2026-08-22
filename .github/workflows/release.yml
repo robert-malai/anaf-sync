@@ -30,6 +30,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          # One cache namespace per workflow. Without a suffix these jobs
+          # and the Linux leg of release-tray.yml derive an identical key —
+          # same runner image, same 3.13, same lockfile hash — and, because
+          # `bundle` deliberately does not wait for `gates`, they race to
+          # reserve it on every tag. The loser logs "Unable to reserve cache".
+          # Harmless to the build, but a warning nobody can act on is a warning
+          # everybody learns to skip.
+          cache-suffix: release-gates
       # With the tray extra, matching ci.yml's Linux leg: without PySide6 every
       # Qt base class is `Any` and `mypy --strict` fails across the tray modules.
       - name: Qt system libraries
